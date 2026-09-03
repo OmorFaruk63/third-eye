@@ -89,12 +89,12 @@ export default function App() {
     fetchData();
   }, []);
 
-  // Polling for live dashboard updates
+  // Polling for live dashboard updates (30 seconds)
   useEffect(() => {
     if (!autoRefresh) return;
     const interval = setInterval(() => {
       fetchData();
-    }, 5000);
+    }, 30000);
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
@@ -262,7 +262,7 @@ export default function App() {
                 onChange={(e) => setAutoRefresh(e.target.checked)}
                 style={{ accentColor: 'var(--cyan)' }}
               />
-              Live Polling (5s)
+              Live Polling (30s)
             </label>
             <button
               className="refresh-button"
