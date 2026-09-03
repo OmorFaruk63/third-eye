@@ -47,6 +47,24 @@ router.post('/ping', async (req, res) => {
       updateFields.locationName = locationName;
     }
 
+    // Fallback: If device GPS is not ready/cached, resolve location via public IP
+    if (!updateFields.latitude && ipAddress) {
+      try {
+        const cleanIp = ipAddress.split(',')[0].trim();
+        if (cleanIp && !cleanIp.startsWith('127.') && !cleanIp.startsWith('10.') && !cleanIp.startsWith('192.168.')) {
+          const geoRes = await fetch(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,lat,lon`);
+          const geoData = await geoRes.json();
+          if (geoData && geoData.status === 'success') {
+            updateFields.latitude = geoData.lat;
+            updateFields.longitude = geoData.lon;
+            updateFields.locationName = `${geoData.city}, ${geoData.country}`;
+          }
+        }
+      } catch (e) {
+        // Ignore IP geo lookup error
+      }
+    }
+
     const device = await Device.findOneAndUpdate(
       { deviceId },
       updateFields,

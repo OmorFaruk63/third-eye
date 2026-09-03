@@ -447,6 +447,7 @@ export default function App() {
                       <thead>
                         <tr>
                           <th>Device</th>
+                          <th>Location</th>
                           <th>Battery</th>
                           <th>Quality</th>
                           <th>Status</th>
@@ -469,6 +470,36 @@ export default function App() {
                                     <div className="device-id">{d.deviceId}</div>
                                   </div>
                                 </div>
+                              </td>
+                              <td>
+                                {d.latitude && d.longitude ? (
+                                  <a
+                                    href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '5px',
+                                      color: 'var(--cyan)',
+                                      textDecoration: 'none',
+                                      fontSize: '12px',
+                                      background: 'rgba(0, 229, 255, 0.1)',
+                                      padding: '4px 8px',
+                                      borderRadius: '6px',
+                                      border: '1px solid rgba(0, 229, 255, 0.25)',
+                                      fontWeight: 500,
+                                    }}
+                                    title={`${d.latitude}, ${d.longitude}`}
+                                  >
+                                    <MapPin size={13} />
+                                    <span>{d.locationName || `${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}`}</span>
+                                  </a>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                                    {d.ipAddress ? d.ipAddress.split(',')[0] : 'Locating...'}
+                                  </span>
+                                )}
                               </td>
                               <td>
                                 <span
