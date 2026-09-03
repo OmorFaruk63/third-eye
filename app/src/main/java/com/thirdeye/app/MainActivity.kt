@@ -167,12 +167,14 @@ class MainActivity : AppCompatActivity() {
     private fun updateRecordingUI(isRecording: Boolean) {
         if (isRecording) {
             binding.btnToggleRecord.setBackgroundResource(R.drawable.bg_record_button_recording)
+            binding.btnToggleRecord.setImageResource(R.drawable.ic_stop)
             binding.btnToggleRecord.setColorFilter(ContextCompat.getColor(this, R.color.recording_red))
             binding.tvRecordStatus.text = "RECORDING IN BACKGROUND..."
             binding.tvRecordStatus.setTextColor(ContextCompat.getColor(this, R.color.recording_red))
             startLiveTimer()
         } else {
             binding.btnToggleRecord.setBackgroundResource(R.drawable.bg_record_button)
+            binding.btnToggleRecord.setImageResource(R.drawable.ic_video_cam)
             binding.btnToggleRecord.setColorFilter(ContextCompat.getColor(this, R.color.neon_cyan))
             binding.tvRecordStatus.text = "TAP TO RECORD"
             binding.tvRecordStatus.setTextColor(ContextCompat.getColor(this, R.color.neon_cyan))

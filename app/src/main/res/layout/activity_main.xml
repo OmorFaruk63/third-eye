@@ -33,7 +33,8 @@
             android:layout_width="44dp"
             android:layout_height="44dp"
             android:background="@drawable/bg_status_badge"
-            android:src="@drawable/ic_camera_record"
+            android:src="@drawable/ic_settings"
+            android:padding="10dp"
             app:tint="@color/neon_cyan"
             android:contentDescription="Settings" />
     </LinearLayout>
@@ -119,7 +120,9 @@
                 android:layout_gravity="center"
                 android:background="@drawable/bg_record_button"
                 android:contentDescription="Start/Stop Record"
-                android:src="@drawable/ic_camera_record"
+                android:scaleType="centerInside"
+                android:padding="36dp"
+                android:src="@drawable/ic_video_cam"
                 app:tint="@color/neon_cyan" />
         </FrameLayout>
 
