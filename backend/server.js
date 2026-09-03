@@ -1,4 +1,8 @@
 require('dotenv').config();
+const fs = require('fs');
+if (fs.existsSync('/etc/secrets/.env')) {
+  require('dotenv').config({ path: '/etc/secrets/.env' });
+}
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
