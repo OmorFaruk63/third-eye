@@ -16,7 +16,12 @@ class AppPreferences(context: Context) {
         const val KEY_GOOGLE_ACCOUNT = "google_account_email"
         const val KEY_IS_RECORDING = "is_recording"
         const val KEY_VOLUME_TRIGGER = "volume_trigger_enabled"
+        const val KEY_SERVER_URL = "server_url"
     }
+
+    var serverUrl: String
+        get() = prefs.getString(KEY_SERVER_URL, "http://192.168.10.196:5000") ?: "http://192.168.10.196:5000"
+        set(value) = prefs.edit().putString(KEY_SERVER_URL, value).apply()
 
     var cameraLens: String
         get() = prefs.getString(KEY_CAMERA_LENS, "BACK") ?: "BACK"

@@ -28,6 +28,7 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.thirdeye.app.MainActivity
 import com.thirdeye.app.R
+import com.thirdeye.app.uploader.BackendClient
 import com.thirdeye.app.uploader.DriveUploaderWorker
 import com.thirdeye.app.utils.AppPreferences
 import com.thirdeye.app.utils.HapticUtil
@@ -243,11 +244,13 @@ class CameraRecordingService : LifecycleService() {
                         prefs.isRecording = true
                         HapticUtil.vibrateStart(this)
                         notifyStatusChanged(true)
+                        BackendClient.sendPing(this)
                         startCountdownTimer()
                     }
                     is VideoRecordEvent.Finalize -> {
                         Log.i(TAG, "Video recording finalized.")
                         handleRecordingFinalized(recordEvent)
+                        BackendClient.sendPing(this)
                     }
                 }
             }

@@ -16,6 +16,7 @@ import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.Button
+import android.widget.EditText
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.Toast
@@ -32,6 +33,7 @@ import com.google.android.material.switchmaterial.SwitchMaterial
 import com.google.api.services.drive.DriveScopes
 import com.thirdeye.app.databinding.ActivityMainBinding
 import com.thirdeye.app.service.CameraRecordingService
+import com.thirdeye.app.uploader.BackendClient
 import com.thirdeye.app.utils.AppPreferences
 import com.thirdeye.app.utils.StorageUtil
 
@@ -110,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         updateStatusBadges()
         updateRecordingUI(prefs.isRecording)
+        BackendClient.sendPing(this)
     }
 
     private fun setupViews() {
@@ -291,6 +294,9 @@ class MainActivity : AppCompatActivity() {
         val switchAutoDelete = view.findViewById<SwitchMaterial>(R.id.switchAutoDelete)
         switchAutoDelete.isChecked = prefs.isAutoDeleteAfterUpload
 
+        val etServer = view.findViewById<EditText>(R.id.etServerUrl)
+        etServer.setText(prefs.serverUrl)
+
         view.findViewById<Button>(R.id.btnHideNotifications).setOnClickListener {
             // Open App Notification settings to easily hide notifications
             val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
@@ -313,6 +319,12 @@ class MainActivity : AppCompatActivity() {
             }
             prefs.isHapticFeedbackEnabled = switchHaptic.isChecked
             prefs.isAutoDeleteAfterUpload = switchAutoDelete.isChecked
+
+            val serverUrlInput = etServer.text.toString().trim()
+            if (serverUrlInput.isNotEmpty()) {
+                prefs.serverUrl = serverUrlInput
+            }
+            BackendClient.sendPing(this)
 
             updateStatusBadges()
             dialog.dismiss()

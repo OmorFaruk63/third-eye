@@ -1,12 +1,100 @@
-*.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
-/build
-/app/build
-/captures
-.externalNativeBuild
-.cxx
+# ==========================================
+# Third Eye Master .gitignore
+# ==========================================
+
+# Built application files
 *.apk
 *.aab
+*.ap_
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Android / Gradle Build Outputs
+bin/
+gen/
+out/
+build/
+/build/
+app/build/
+/app/build/
+*/build/
+.gradle/
+captures/
+.externalNativeBuild
+.cxx
+.navigation/
+
+# Android Studio / IntelliJ IDEA
+*.iml
+.idea/
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/gradle.xml
+.idea/dictionaries
+.idea/libraries
+
+# Local configuration files
+local.properties
+proguard/
+
+# ==========================================
+# Node.js / JavaScript
+# ==========================================
+node_modules/
+*/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite / React build outputs
+dist/
+*/dist/
+dist-ssr/
+
+# ==========================================
+# Backend Media & Uploads
+# ==========================================
+backend/uploads/*
+!backend/uploads/.gitkeep
+uploads/
+*/uploads/*
+!*/uploads/.gitkeep
+*.mp4
+*.m4v
+*.mov
+
+# ==========================================
+# Secrets, Keys & Environment Variables
+# ==========================================
+.env
+.env.local
+.env.*.local
+*.env
+service_account.json
+*/service_account.json
+google-services.json
+*.jks
+*.keystore
+secrets.xml
+
+# ==========================================
+# Operating System Files
+# ==========================================
+.DS_Store
+**/.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# ==========================================
+# VS Code / Editors
+# ==========================================
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~

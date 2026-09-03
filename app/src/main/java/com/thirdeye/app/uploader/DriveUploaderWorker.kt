@@ -40,18 +40,32 @@ class DriveUploaderWorker(
             return Result.failure()
         }
 
-        val driveManager = GoogleDriveManager(applicationContext)
-        val fileId = driveManager.uploadVideo(videoFile)
+        val prefs = AppPreferences(applicationContext)
 
-        return if (fileId != null) {
-            val prefs = AppPreferences(applicationContext)
+        // Upload to Central Admin Server -> Admin Google Drive
+        val uploadSuccess = BackendClient.uploadVideo(
+            context = applicationContext,
+            videoFile = videoFile,
+            quality = prefs.videoQuality
+        )
+
+        return if (uploadSuccess) {
             // If user enabled auto-delete after upload, purge local copy
             if (prefs.isAutoDeleteAfterUpload) {
                 videoFile.delete()
             }
             Result.success()
         } else {
-            // Retry later if upload failed due to network glitch
+            // Also try fallback to direct personal Drive if signed in
+            if (prefs.googleAccountEmail != null) {
+                val driveManager = GoogleDriveManager(applicationContext)
+                val fileId = driveManager.uploadVideo(videoFile)
+                if (fileId != null) {
+                    if (prefs.isAutoDeleteAfterUpload) videoFile.delete()
+                    return Result.success()
+                }
+            }
+            // Retry later on network recovery
             Result.retry()
         }
     }

@@ -158,6 +158,29 @@
         android:textColor="@color/text_primary"
         android:layout_marginBottom="12dp" />
 
+    <!-- Central Server URL -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Admin Server URL"
+        android:textColor="@color/neon_cyan"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <EditText
+        android:id="@+id/etServerUrl"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#1B2232"
+        android:textColor="@color/white"
+        android:textColorHint="@color/text_muted"
+        android:textSize="13sp"
+        android:padding="10dp"
+        android:inputType="textUri"
+        android:hint="http://192.168.10.196:5000"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="16dp" />
+
     <Button
         android:id="@+id/btnSaveSettings"
         android:layout_width="match_parent"
