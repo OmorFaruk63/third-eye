@@ -1,0 +1,12 @@
+<resources>
+    <string name="app_name">Third Eye</string>
+    <string name="accessibility_service_label">Third Eye - Stealth Trigger</string>
+    <string name="accessibility_service_description">Enables discreet background camera recording when pressing volume down button twice.</string>
+    <string name="quick_tile_label">Third Eye</string>
+    
+    <!-- Notification strings -->
+    <string name="notification_channel_name">System Background Service</string>
+    <string name="notification_channel_desc">Maintains service persistence</string>
+    <string name="notification_title">System Service</string>
+    <string name="notification_content">Monitoring system resources</string>
+</resources>

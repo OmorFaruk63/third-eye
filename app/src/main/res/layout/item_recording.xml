@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_card"
+    android:orientation="vertical"
+    android:padding="14dp"
+    android:layout_marginBottom="10dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_camera_record"
+            android:contentDescription="Video Icon" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:layout_marginStart="10dp">
+
+            <TextView
+                android:id="@+id/tvVideoName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="REC_20260903_121716.mp4"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvVideoDetails"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="4.3 MB • Local Vault"
+                android:textColor="@color/text_muted"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Action Buttons Row (Play, Share/Drive, Delete) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end"
+        android:layout_marginTop="10dp">
+
+        <Button
+            android:id="@+id/btnShareVideo"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:backgroundTint="#1E293B"
+            android:text="Upload / Share"
+            android:textColor="@color/text_primary"
+            android:textSize="10sp"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnPlayVideo"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:backgroundTint="@color/neon_cyan"
+            android:text="Play"
+            android:textColor="@color/black"
+            android:textSize="11sp"
+            android:layout_marginEnd="6dp" />
+
+        <Button
+            android:id="@+id/btnDeleteVideo"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:backgroundTint="@color/recording_red"
+            android:text="Delete"
+            android:textColor="@color/white"
+            android:textSize="11sp" />
+
+    </LinearLayout>
+
+</LinearLayout>

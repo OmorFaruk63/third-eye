@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/surface_card"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Recording Settings"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Camera Lens Selection -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Camera Lens"
+        android:textColor="@color/neon_cyan"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <RadioGroup
+        android:id="@+id/rgCameraLens"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="16dp">
+
+        <RadioButton
+            android:id="@+id/rbBackCamera"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Rear (Back)"
+            android:textColor="@color/text_secondary"
+            android:layout_marginEnd="16dp" />
+
+        <RadioButton
+            android:id="@+id/rbFrontCamera"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Front (Selfie)"
+            android:textColor="@color/text_secondary" />
+    </RadioGroup>
+
+    <!-- Video Quality Selection -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Resolution &amp; File Size"
+        android:textColor="@color/neon_cyan"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <RadioGroup
+        android:id="@+id/rgQuality"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="16dp">
+
+        <RadioButton
+            android:id="@+id/rb480p"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="480p (Compact)"
+            android:textColor="@color/text_secondary"
+            android:layout_marginEnd="8dp" />
+
+        <RadioButton
+            android:id="@+id/rb720p"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="720p (Recommended)"
+            android:textColor="@color/text_secondary"
+            android:layout_marginEnd="8dp" />
+
+        <RadioButton
+            android:id="@+id/rb1080p"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1080p"
+            android:textColor="@color/text_secondary" />
+    </RadioGroup>
+
+    <!-- Duration Selection -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Max Duration Limit"
+        android:textColor="@color/neon_cyan"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <RadioGroup
+        android:id="@+id/rgDuration"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="16dp">
+
+        <RadioButton
+            android:id="@+id/rb5min"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="5 Min"
+            android:textColor="@color/text_secondary"
+            android:layout_marginEnd="16dp" />
+
+        <RadioButton
+            android:id="@+id/rb15min"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="15 Min"
+            android:textColor="@color/text_secondary"
+            android:layout_marginEnd="16dp" />
+
+        <RadioButton
+            android:id="@+id/rb30min"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="30 Min"
+            android:textColor="@color/text_secondary" />
+    </RadioGroup>
+
+    <!-- Haptic switch -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchHaptic"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="In-Hand Haptic Feedback (Vibration)"
+        android:textColor="@color/text_primary"
+        android:layout_marginBottom="10dp" />
+
+    <!-- Auto delete switch -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchAutoDelete"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Auto-Delete Local Video after Drive Upload"
+        android:textColor="@color/text_primary"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Open System Notification Settings Button -->
+    <Button
+        android:id="@+id/btnHideNotifications"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:backgroundTint="#2D3A50"
+        android:text="Hide Foreground Notification (System Settings)"
+        android:textColor="@color/text_primary"
+        android:layout_marginBottom="12dp" />
+
+    <Button
+        android:id="@+id/btnSaveSettings"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:backgroundTint="@color/neon_cyan"
+        android:text="Save &amp; Close"
+        android:textColor="@color/black" />
+
+</LinearLayout>

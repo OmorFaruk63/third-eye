@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/surface_card"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Private Video Vault"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hidden from phone gallery (.nomedia protected)"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:layout_marginBottom="16dp" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rvRecordings"
+        android:layout_width="match_parent"
+        android:layout_height="260dp"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:id="@+id/tvEmptyVault"
+        android:layout_width="match_parent"
+        android:layout_height="100dp"
+        android:gravity="center"
+        android:text="No secret recordings yet."
+        android:textColor="@color/text_muted"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnDeleteAll"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:backgroundTint="#4DFF3366"
+            android:text="Delete All"
+            android:textColor="@color/recording_red" />
+
+        <Button
+            android:id="@+id/btnCloseVault"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:backgroundTint="@color/surface_card_stroke"
+            android:text="Close"
+            android:textColor="@color/text_primary" />
+    </LinearLayout>
+
+</LinearLayout>

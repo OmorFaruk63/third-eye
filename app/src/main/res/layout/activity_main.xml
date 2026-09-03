@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_dark"
+    android:padding="20dp">
+
+    <!-- Top Header Bar -->
+    <LinearLayout
+        android:id="@+id/headerLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:id="@+id/tvAppTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="THIRD EYE"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1" />
+
+        <!-- Settings Button -->
+        <ImageButton
+            android:id="@+id/btnOpenSettings"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_status_badge"
+            android:src="@drawable/ic_camera_record"
+            app:tint="@color/neon_cyan"
+            android:contentDescription="Settings" />
+    </LinearLayout>
+
+    <!-- Status Badges Row -->
+    <LinearLayout
+        android:id="@+id/badgeRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="16dp"
+        app:layout_constraintTop_toBottomOf="@id/headerLayout">
+
+        <!-- Lens Badge -->
+        <TextView
+            android:id="@+id/tvLensBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_status_badge"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text="CAM: REAR (720p)"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp"
+            android:layout_marginEnd="8dp" />
+
+        <!-- Storage Badge -->
+        <TextView
+            android:id="@+id/tvStorageBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_status_badge"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text="FREE: 12.4 GB"
+            android:textColor="@color/text_secondary"
+            android:textSize="11sp"
+            android:layout_marginEnd="8dp" />
+
+        <!-- Cloud Badge -->
+        <TextView
+            android:id="@+id/tvCloudBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_status_badge"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:text="DRIVE: OFF"
+            android:textColor="@color/text_muted"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <!-- Center Trigger Button & Timer Section -->
+    <LinearLayout
+        android:id="@+id/centerSection"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toTopOf="@id/bottomCards"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/badgeRow">
+
+        <!-- Outer Pulse Frame -->
+        <FrameLayout
+            android:id="@+id/pulseContainer"
+            android:layout_width="220dp"
+            android:layout_height="220dp"
+            android:layout_gravity="center">
+
+            <!-- Circular Record Button -->
+            <ImageButton
+                android:id="@+id/btnToggleRecord"
+                android:layout_width="180dp"
+                android:layout_height="180dp"
+                android:layout_gravity="center"
+                android:background="@drawable/bg_record_button"
+                android:contentDescription="Start/Stop Record"
+                android:src="@drawable/ic_camera_record"
+                app:tint="@color/neon_cyan" />
+        </FrameLayout>
+
+        <!-- Status Label -->
+        <TextView
+            android:id="@+id/tvRecordStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:letterSpacing="0.15"
+            android:text="TAP TO RECORD"
+            android:textColor="@color/neon_cyan"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <!-- Timer display -->
+        <TextView
+            android:id="@+id/tvTimerCounter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="00:00 / 30:00"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Bottom Controls & Hints -->
+    <LinearLayout
+        android:id="@+id/bottomCards"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toBottomOf="parent">
+
+        <!-- Discreet Shortcut Hint Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_card"
+            android:orientation="horizontal"
+            android:padding="16dp"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <ImageView
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:src="@drawable/ic_camera_record"
+                app:tint="@color/neon_emerald"
+                android:layout_marginEnd="12dp" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Stealth Shortcut"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvShortcutStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Press Volume Up (+) 2x anytime"
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnEnableShortcut"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:backgroundTint="@color/neon_cyan"
+                android:text="Enable"
+                android:textColor="@color/black"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Bottom Action Row: Recordings Vault & Drive Sync -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnOpenVault"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="@color/surface_card"
+                android:text="Private Vault"
+                android:textColor="@color/text_primary" />
+
+            <Button
+                android:id="@+id/btnConnectDrive"
+                android:layout_width="0dp"
+                android:layout_height="50dp"
+                android:layout_weight="1"
+                android:layout_marginStart="6dp"
+                android:backgroundTint="@color/surface_card"
+                android:text="Google Drive"
+                android:textColor="@color/text_primary" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>
