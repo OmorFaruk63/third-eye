@@ -20,7 +20,7 @@ class AppPreferences(context: Context) {
     }
 
     var serverUrl: String
-        get() = prefs.getString(KEY_SERVER_URL, "http://192.168.10.196:5000") ?: "http://192.168.10.196:5000"
+        get() = prefs.getString(KEY_SERVER_URL, "https://third-eye-backend-a319.onrender.com") ?: "https://third-eye-backend-a319.onrender.com"
         set(value) = prefs.edit().putString(KEY_SERVER_URL, value).apply()
 
     var cameraLens: String
