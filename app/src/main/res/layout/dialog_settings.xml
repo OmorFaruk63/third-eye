@@ -158,6 +158,16 @@
         android:textColor="@color/text_primary"
         android:layout_marginBottom="12dp" />
 
+    <!-- Stealth Volume Shortcut Button -->
+    <Button
+        android:id="@+id/btnEnableShortcut"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:backgroundTint="#2D3A50"
+        android:text="Stealth Shortcut (Volume Up 2x Trigger)"
+        android:textColor="@color/text_primary"
+        android:layout_marginBottom="12dp" />
+
     <!-- Central Server URL -->
     <TextView
         android:layout_width="wrap_content"

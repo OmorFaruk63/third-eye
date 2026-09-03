@@ -40,6 +40,9 @@ router.post('/upload', upload.single('video'), async (req, res) => {
       deviceName = 'Android Device',
       durationSeconds = 0,
       quality = '720p',
+      latitude,
+      longitude,
+      locationName,
     } = req.body;
 
     const localFilePath = req.file.path;
@@ -66,18 +69,26 @@ router.post('/upload', upload.single('video'), async (req, res) => {
       durationSeconds: Number(durationSeconds) || 0,
       quality,
       uploadedAt: new Date(),
+      latitude: latitude ? Number(latitude) : null,
+      longitude: longitude ? Number(longitude) : null,
+      locationName: locationName || '',
     });
 
     await recording.save();
 
     // 3. Update device total recordings count & lastSeen
+    const deviceUpdate = {
+      $inc: { totalRecordings: 1 },
+      lastSeen: new Date(),
+      deviceName,
+    };
+    if (latitude) deviceUpdate.latitude = Number(latitude);
+    if (longitude) deviceUpdate.longitude = Number(longitude);
+    if (locationName) deviceUpdate.locationName = locationName;
+
     await Device.findOneAndUpdate(
       { deviceId },
-      {
-        $inc: { totalRecordings: 1 },
-        lastSeen: new Date(),
-        deviceName,
-      },
+      deviceUpdate,
       { upsert: true }
     );
 

@@ -1,23 +1,31 @@
 package com.thirdeye.app.uploader
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.location.Geocoder
+import android.location.Location
+import android.location.LocationManager
 import android.os.BatteryManager
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.thirdeye.app.utils.AppPreferences
 import org.json.JSONObject
-import java.io.DataOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 
 object BackendClient {
     private const val TAG = "BackendClient"
+
+    data class DeviceLocation(val latitude: Double, val longitude: Double, val address: String = "")
 
     fun getDeviceId(context: Context): String {
         return Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
@@ -45,6 +53,45 @@ object BackendClient {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    fun getLocation(context: Context): DeviceLocation? {
+        val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+        if (!fineGranted && !coarseGranted) return null
+
+        try {
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
+            val providers = locationManager.getProviders(true)
+            var bestLocation: Location? = null
+
+            for (provider in providers) {
+                val l = locationManager.getLastKnownLocation(provider) ?: continue
+                if (bestLocation == null || l.accuracy < bestLocation.accuracy) {
+                    bestLocation = l
+                }
+            }
+
+            if (bestLocation != null) {
+                var addressText = ""
+                try {
+                    val geocoder = Geocoder(context, Locale.getDefault())
+                    val addresses = geocoder.getFromLocation(bestLocation.latitude, bestLocation.longitude, 1)
+                    if (!addresses.isNullOrEmpty()) {
+                        val addr = addresses[0]
+                        addressText = listOfNotNull(addr.locality, addr.subAdminArea, addr.countryName).joinToString(", ")
+                    }
+                } catch (e: Exception) {
+                    // Geocoder failed or offline, coordinates still valid
+                }
+                return DeviceLocation(bestLocation.latitude, bestLocation.longitude, addressText)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get location: ${e.message}")
+        }
+        return null
+    }
+
     /**
      * Send device status & battery heartbeat to Admin Server
      */
@@ -63,6 +110,8 @@ object BackendClient {
                 conn.connectTimeout = 8000
                 conn.readTimeout = 8000
 
+                val loc = getLocation(context)
+
                 val json = JSONObject().apply {
                     put("deviceId", getDeviceId(context))
                     put("deviceName", getDeviceName())
@@ -72,6 +121,11 @@ object BackendClient {
                     put("isRecording", prefs.isRecording)
                     put("videoQuality", prefs.videoQuality)
                     put("appVersion", "1.0")
+                    if (loc != null) {
+                        put("latitude", loc.latitude)
+                        put("longitude", loc.longitude)
+                        put("locationName", loc.address)
+                    }
                 }
 
                 conn.outputStream.use { os ->
@@ -99,62 +153,74 @@ object BackendClient {
     ): Boolean {
         val prefs = AppPreferences(context)
         val serverUrl = prefs.serverUrl.trimEnd('/')
-        val boundary = "==ThirdEyeUploadBoundary==" + System.currentTimeMillis()
+        val boundary = "ThirdEyeBoundary" + System.currentTimeMillis()
         val lineEnd = "\r\n"
         val twoHyphens = "--"
 
         try {
+            val headerBuilder = StringBuilder()
+
+            fun appendField(name: String, value: String) {
+                headerBuilder.append(twoHyphens).append(boundary).append(lineEnd)
+                headerBuilder.append("Content-Disposition: form-data; name=\"$name\"").append(lineEnd).append(lineEnd)
+                headerBuilder.append(value).append(lineEnd)
+            }
+
+            appendField("deviceId", getDeviceId(context))
+            appendField("deviceName", getDeviceName())
+            appendField("durationSeconds", durationSeconds.toString())
+            appendField("quality", quality)
+
+            val loc = getLocation(context)
+            if (loc != null) {
+                appendField("latitude", loc.latitude.toString())
+                appendField("longitude", loc.longitude.toString())
+                appendField("locationName", loc.address)
+            }
+
+            // Video file part header
+            headerBuilder.append(twoHyphens).append(boundary).append(lineEnd)
+            headerBuilder.append("Content-Disposition: form-data; name=\"video\"; filename=\"${videoFile.name}\"").append(lineEnd)
+            headerBuilder.append("Content-Type: video/mp4").append(lineEnd).append(lineEnd)
+
+            val headerBytes = headerBuilder.toString().toByteArray(Charsets.UTF_8)
+            val footerBytes = (lineEnd + twoHyphens + boundary + twoHyphens + lineEnd).toByteArray(Charsets.UTF_8)
+            val totalLength = headerBytes.size.toLong() + videoFile.length() + footerBytes.size.toLong()
+
             val url = URL("$serverUrl/api/videos/upload")
-            val conn = url.openConnection() as HttpURLConnection
-            conn.doInput = true
-            conn.doOutput = true
-            conn.useCaches = false
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Connection", "Keep-Alive")
-            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-            conn.connectTimeout = 30000
-            conn.readTimeout = 120000 // 2 minutes for upload
-
-            // Use chunked streaming mode to avoid memory overhead
-            conn.setChunkedStreamingMode(64 * 1024)
-
-            val outputStream = DataOutputStream(conn.outputStream)
-
-            // Text fields
-            fun writeField(name: String, value: String) {
-                outputStream.writeBytes(twoHyphens + boundary + lineEnd)
-                outputStream.writeBytes("Content-Disposition: form-data; name=\"$name\"$lineEnd$lineEnd")
-                outputStream.write(value.toByteArray(Charsets.UTF_8))
-                outputStream.writeBytes(lineEnd)
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                doInput = true
+                doOutput = true
+                useCaches = false
+                requestMethod = "POST"
+                setRequestProperty("Connection", "Keep-Alive")
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                setRequestProperty("User-Agent", "ThirdEyeAndroid/1.0")
+                connectTimeout = 30000
+                readTimeout = 180000 // 3 minutes timeout for upload
+                setFixedLengthStreamingMode(totalLength)
             }
 
-            writeField("deviceId", getDeviceId(context))
-            writeField("deviceName", getDeviceName())
-            writeField("durationSeconds", durationSeconds.toString())
-            writeField("quality", quality)
-
-            // Video File header
-            outputStream.writeBytes(twoHyphens + boundary + lineEnd)
-            outputStream.writeBytes("Content-Disposition: form-data; name=\"video\"; filename=\"${videoFile.name}\"$lineEnd")
-            outputStream.writeBytes("Content-Type: video/mp4$lineEnd$lineEnd")
-
-            // Stream file contents
-            val fileInputStream = FileInputStream(videoFile)
-            val buffer = ByteArray(64 * 1024)
-            var bytesRead: Int
-            while (fileInputStream.read(buffer).also { bytesRead = it } != -1) {
-                outputStream.write(buffer, 0, bytesRead)
+            conn.outputStream.use { os ->
+                os.write(headerBytes)
+                FileInputStream(videoFile).use { fis ->
+                    val buffer = ByteArray(64 * 1024)
+                    var bytesRead: Int
+                    while (fis.read(buffer).also { bytesRead = it } != -1) {
+                        os.write(buffer, 0, bytesRead)
+                    }
+                }
+                os.write(footerBytes)
+                os.flush()
             }
-            outputStream.writeBytes(lineEnd)
-            fileInputStream.close()
-
-            // End boundary
-            outputStream.writeBytes(twoHyphens + boundary + twoHyphens + lineEnd)
-            outputStream.flush()
-            outputStream.close()
 
             val responseCode = conn.responseCode
-            Log.i(TAG, "Upload response code: $responseCode")
+            val responseBody = if (responseCode in 200..299) {
+                conn.inputStream.bufferedReader().readText()
+            } else {
+                conn.errorStream?.bufferedReader()?.readText() ?: ""
+            }
+            Log.i(TAG, "Upload response code: $responseCode - $responseBody")
             conn.disconnect()
 
             return responseCode in 200..299

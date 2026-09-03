@@ -157,56 +157,6 @@
         android:orientation="vertical"
         app:layout_constraintBottom_toBottomOf="parent">
 
-        <!-- Discreet Shortcut Hint Card -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_card"
-            android:orientation="horizontal"
-            android:padding="16dp"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="12dp">
-
-            <ImageView
-                android:layout_width="28dp"
-                android:layout_height="28dp"
-                android:src="@drawable/ic_camera_record"
-                app:tint="@color/neon_emerald"
-                android:layout_marginEnd="12dp" />
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Stealth Shortcut"
-                    android:textColor="@color/text_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/tvShortcutStatus"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Press Volume Up (+) 2x anytime"
-                    android:textColor="@color/text_muted"
-                    android:textSize="12sp" />
-            </LinearLayout>
-
-            <Button
-                android:id="@+id/btnEnableShortcut"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:backgroundTint="@color/neon_cyan"
-                android:text="Enable"
-                android:textColor="@color/black"
-                android:textSize="11sp" />
-        </LinearLayout>
-
         <!-- Bottom Action Row: Recordings Vault & Drive Sync -->
         <LinearLayout
             android:layout_width="match_parent"

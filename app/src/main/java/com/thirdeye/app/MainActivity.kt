@@ -139,13 +139,6 @@ class MainActivity : AppCompatActivity() {
         binding.btnConnectDrive.setOnClickListener {
             initiateGoogleSignIn()
         }
-
-        binding.btnEnableShortcut.setOnClickListener {
-            // Open Accessibility Settings
-            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            startActivity(intent)
-            Toast.makeText(this, "Enable 'Third Eye' in Accessibility to activate Volume shortcut", Toast.LENGTH_LONG).show()
-        }
     }
 
     private fun updateStatusBadges() {
@@ -210,7 +203,9 @@ class MainActivity : AppCompatActivity() {
     private fun checkPermissions() {
         val permissions = mutableListOf(
             Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
@@ -303,6 +298,13 @@ class MainActivity : AppCompatActivity() {
                 putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
             }
             startActivity(intent)
+        }
+
+        view.findViewById<Button>(R.id.btnEnableShortcut).setOnClickListener {
+            // Open Accessibility Settings
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivity(intent)
+            Toast.makeText(this, "Enable 'Third Eye' in Accessibility to activate Volume shortcut", Toast.LENGTH_LONG).show()
         }
 
         view.findViewById<Button>(R.id.btnSaveSettings).setOnClickListener {

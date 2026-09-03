@@ -47,6 +47,18 @@ const DeviceSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  latitude: {
+    type: Number,
+    default: null,
+  },
+  longitude: {
+    type: Number,
+    default: null,
+  },
+  locationName: {
+    type: String,
+    default: '',
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Device', DeviceSchema);

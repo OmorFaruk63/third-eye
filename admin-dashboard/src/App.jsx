@@ -21,10 +21,11 @@ import {
   Clock,
   Calendar,
   CloudUpload,
-  Info
+  Info,
+  MapPin
 } from 'lucide-react';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://third-eye-backend-a319.onrender.com';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
@@ -561,10 +562,10 @@ export default function App() {
                       <tr>
                         <th>Device Name / Model</th>
                         <th>Device ID</th>
+                        <th>Location</th>
                         <th>Battery</th>
                         <th>Resolution</th>
                         <th>Status</th>
-                        <th>IP Address</th>
                         <th>Last Active</th>
                         <th>Total Videos</th>
                         <th>Action</th>
@@ -588,6 +589,36 @@ export default function App() {
                             </td>
                             <td>
                               <span style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>{d.deviceId}</span>
+                            </td>
+                            <td>
+                              {d.latitude && d.longitude ? (
+                                <a
+                                  href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    color: 'var(--cyan)',
+                                    textDecoration: 'none',
+                                    fontSize: '12px',
+                                    background: 'rgba(0, 229, 255, 0.1)',
+                                    padding: '4px 8px',
+                                    borderRadius: '6px',
+                                    border: '1px solid rgba(0, 229, 255, 0.25)',
+                                    fontWeight: 500,
+                                  }}
+                                  title={`${d.latitude}, ${d.longitude}`}
+                                >
+                                  <MapPin size={13} />
+                                  <span>{d.locationName || `${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}`}</span>
+                                </a>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                                  {d.ipAddress ? d.ipAddress.split(',')[0] : 'Unknown'}
+                                </span>
+                              )}
                             </td>
                             <td>
                               <span
@@ -617,9 +648,6 @@ export default function App() {
                               >
                                 {d.isRecording ? 'Recording' : isOnline ? 'Online' : 'Offline'}
                               </span>
-                            </td>
-                            <td style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
-                              {d.ipAddress || 'Local'}
                             </td>
                             <td>{formatTimeAgo(d.lastSeen)}</td>
                             <td style={{ fontWeight: 700, color: 'var(--cyan)' }}>{d.totalRecordings || 0}</td>
@@ -708,6 +736,26 @@ export default function App() {
                             <Calendar size={12} style={{ display: 'inline', marginRight: '4px' }} />
                             {new Date(rec.uploadedAt).toLocaleString()}
                           </div>
+                          {rec.latitude && rec.longitude && (
+                            <div>
+                              <a
+                                href={`https://www.google.com/maps?q=${rec.latitude},${rec.longitude}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                style={{
+                                  color: 'var(--cyan)',
+                                  textDecoration: 'none',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '12px',
+                                }}
+                              >
+                                <MapPin size={12} />
+                                <span>{rec.locationName || `${rec.latitude.toFixed(2)}, ${rec.longitude.toFixed(2)}`}</span>
+                              </a>
+                            </div>
+                          )}
                           {rec.driveFileId ? (
                             <div style={{ color: 'var(--emerald)' }}>
                               <CheckCircle2 size={12} style={{ display: 'inline', marginRight: '4px' }} />

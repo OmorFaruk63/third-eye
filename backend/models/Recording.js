@@ -46,6 +46,18 @@ const RecordingSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  latitude: {
+    type: Number,
+    default: null,
+  },
+  longitude: {
+    type: Number,
+    default: null,
+  },
+  locationName: {
+    type: String,
+    default: '',
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Recording', RecordingSchema);

@@ -14,6 +14,9 @@ router.post('/ping', async (req, res) => {
       isRecording,
       videoQuality,
       appVersion,
+      latitude,
+      longitude,
+      locationName,
     } = req.body;
 
     if (!deviceId) {
@@ -22,20 +25,32 @@ router.post('/ping', async (req, res) => {
 
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
 
+    const updateFields = {
+      deviceName: deviceName || 'Android Device',
+      model: model || 'Unknown Model',
+      androidVersion: androidVersion || '',
+      batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
+      isRecording: Boolean(isRecording),
+      videoQuality: videoQuality || '720p',
+      appVersion: appVersion || '1.0',
+      lastSeen: new Date(),
+      ipAddress,
+    };
+
+    if (latitude !== undefined && latitude !== null) {
+      updateFields.latitude = Number(latitude);
+    }
+    if (longitude !== undefined && longitude !== null) {
+      updateFields.longitude = Number(longitude);
+    }
+    if (locationName) {
+      updateFields.locationName = locationName;
+    }
+
     const device = await Device.findOneAndUpdate(
       { deviceId },
-      {
-        deviceName: deviceName || 'Android Device',
-        model: model || 'Unknown Model',
-        androidVersion: androidVersion || '',
-        batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
-        isRecording: Boolean(isRecording),
-        videoQuality: videoQuality || '720p',
-        appVersion: appVersion || '1.0',
-        lastSeen: new Date(),
-        ipAddress,
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      updateFields,
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     res.json({ success: true, device });
