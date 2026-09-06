@@ -18,9 +18,9 @@ class QuickRecordTileService : TileService() {
         super.onClick()
         val prefs = AppPreferences(this)
         if (prefs.isRecording) {
-            CameraRecordingService.stopService(this)
+            CameraRecordingService.stopService(this, enableVibration = true)
         } else {
-            CameraRecordingService.startService(this)
+            CameraRecordingService.startService(this, enableVibration = true)
         }
         updateTileState()
     }

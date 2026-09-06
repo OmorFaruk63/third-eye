@@ -49,17 +49,20 @@ class CameraRecordingService : LifecycleService() {
         const val ACTION_STOP_RECORDING = "com.thirdeye.app.ACTION_STOP"
         const val ACTION_RECORDING_STATUS_CHANGED = "com.thirdeye.app.STATUS_CHANGED"
         const val EXTRA_IS_RECORDING = "extra_is_recording"
+        const val EXTRA_ENABLE_VIBRATION = "extra_enable_vibration"
 
-        fun startService(context: Context) {
+        fun startService(context: Context, enableVibration: Boolean = false) {
             val intent = Intent(context, CameraRecordingService::class.java).apply {
                 action = ACTION_START_RECORDING
+                putExtra(EXTRA_ENABLE_VIBRATION, enableVibration)
             }
             ContextCompat.startForegroundService(context, intent)
         }
 
-        fun stopService(context: Context) {
+        fun stopService(context: Context, enableVibration: Boolean = false) {
             val intent = Intent(context, CameraRecordingService::class.java).apply {
                 action = ACTION_STOP_RECORDING
+                putExtra(EXTRA_ENABLE_VIBRATION, enableVibration)
             }
             context.startService(intent)
         }
@@ -68,6 +71,7 @@ class CameraRecordingService : LifecycleService() {
     private var activeRecording: Recording? = null
     private var currentOutputFile: File? = null
     private var timerJob: Job? = null
+    private var shouldVibrate: Boolean = false
     private lateinit var prefs: AppPreferences
 
     private val batteryReceiver = object : BroadcastReceiver() {
@@ -93,12 +97,16 @@ class CameraRecordingService : LifecycleService() {
 
         when (intent?.action) {
             ACTION_START_RECORDING -> {
+                shouldVibrate = intent.getBooleanExtra(EXTRA_ENABLE_VIBRATION, false)
                 if (activeRecording == null && !prefs.isRecording) {
                     startForegroundWithNotification()
                     initAndStartCameraRecording()
                 }
             }
             ACTION_STOP_RECORDING -> {
+                if (intent.hasExtra(EXTRA_ENABLE_VIBRATION)) {
+                    shouldVibrate = intent.getBooleanExtra(EXTRA_ENABLE_VIBRATION, false)
+                }
                 stopRecording()
             }
         }
@@ -242,7 +250,9 @@ class CameraRecordingService : LifecycleService() {
                     is VideoRecordEvent.Start -> {
                         Log.i(TAG, "Video recording started.")
                         prefs.isRecording = true
-                        HapticUtil.vibrateStart(this)
+                        if (shouldVibrate) {
+                            HapticUtil.vibrateStart(this)
+                        }
                         notifyStatusChanged(true)
                         BackendClient.sendPing(this)
                         startCountdownTimer()
@@ -278,7 +288,9 @@ class CameraRecordingService : LifecycleService() {
 
     private fun handleRecordingFinalized(event: VideoRecordEvent.Finalize) {
         prefs.isRecording = false
-        HapticUtil.vibrateStop(this)
+        if (shouldVibrate) {
+            HapticUtil.vibrateStop(this)
+        }
         notifyStatusChanged(false)
 
         if (!event.hasError()) {

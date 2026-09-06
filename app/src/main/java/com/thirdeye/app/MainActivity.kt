@@ -118,10 +118,10 @@ class MainActivity : AppCompatActivity() {
     private fun setupViews() {
         binding.btnToggleRecord.setOnClickListener {
             if (prefs.isRecording) {
-                CameraRecordingService.stopService(this)
+                CameraRecordingService.stopService(this, enableVibration = false)
             } else {
                 if (hasRequiredPermissions()) {
-                    CameraRecordingService.startService(this)
+                    CameraRecordingService.startService(this, enableVibration = false)
                 } else {
                     checkPermissions()
                 }
