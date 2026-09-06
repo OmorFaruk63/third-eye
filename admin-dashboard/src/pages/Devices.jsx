@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Smartphone,
   Radio,
+  Video,
   Trash2,
   MapPin,
   BatteryCharging,
@@ -37,6 +38,8 @@ export default function Devices() {
     searchQuery,
     setSearchQuery,
     handleStartLiveStream,
+    handleStartRemoteRecording,
+    handleStopRemoteRecording,
     handleDeleteDevice,
     formatTimeAgo,
   } = useDashboard();
@@ -330,10 +333,26 @@ export default function Devices() {
                           background: 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)',
                           border: '1px solid rgba(255,23,68,0.4)',
                           color: '#ff5252',
+                          fontSize: '0.75rem',
                           '&:hover': { background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)', color: '#fff' },
                         }}
                       >
                         Watch Live
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => d.isRecording ? handleStopRemoteRecording(d.deviceId) : handleStartRemoteRecording(d.deviceId)}
+                        startIcon={<Video size={13} />}
+                        sx={{
+                          fontSize: '0.75rem', py: 0.4, px: 1,
+                          borderColor: d.isRecording ? 'rgba(255,23,68,0.5)' : 'rgba(0,229,255,0.3)',
+                          color: d.isRecording ? '#ff5252' : '#00e5ff',
+                          background: d.isRecording ? 'rgba(255,23,68,0.1)' : 'rgba(0,229,255,0.06)',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {d.isRecording ? 'Stop' : 'Record'}
                       </Button>
                       <IconButton
                         size="small"
@@ -535,6 +554,24 @@ export default function Devices() {
                               }}
                             >
                               Watch Live
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => d.isRecording ? handleStopRemoteRecording(d.deviceId) : handleStartRemoteRecording(d.deviceId)}
+                              startIcon={<Video size={13} />}
+                              sx={{
+                                fontSize: '0.75rem', py: 0.5, px: 1.5,
+                                borderColor: d.isRecording ? 'rgba(255,23,68,0.5)' : 'rgba(0,229,255,0.3)',
+                                color: d.isRecording ? '#ff5252' : '#00e5ff',
+                                background: d.isRecording ? 'rgba(255,23,68,0.1)' : 'rgba(0,229,255,0.06)',
+                                '&:hover': {
+                                  background: d.isRecording ? 'rgba(255,23,68,0.2)' : 'rgba(0,229,255,0.15)',
+                                  borderColor: d.isRecording ? '#ff1744' : '#00e5ff',
+                                },
+                              }}
+                            >
+                              {d.isRecording ? 'Stop Rec' : 'Remote Rec'}
                             </Button>
                             <IconButton
                               size="small"

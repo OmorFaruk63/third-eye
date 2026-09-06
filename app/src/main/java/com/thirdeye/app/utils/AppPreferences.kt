@@ -17,7 +17,17 @@ class AppPreferences(context: Context) {
         const val KEY_IS_RECORDING = "is_recording"
         const val KEY_VOLUME_TRIGGER = "volume_trigger_enabled"
         const val KEY_SERVER_URL = "server_url"
+        const val KEY_DISGUISE_ENABLED = "disguise_enabled"
+        const val KEY_DISGUISE_PIN = "disguise_pin"
     }
+
+    var isDisguiseEnabled: Boolean
+        get() = prefs.getBoolean(KEY_DISGUISE_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_DISGUISE_ENABLED, value).apply()
+
+    var disguisePin: String
+        get() = prefs.getString(KEY_DISGUISE_PIN, "7777") ?: "7777"
+        set(value) = prefs.edit().putString(KEY_DISGUISE_PIN, value).apply()
 
     var serverUrl: String
         get() = prefs.getString(KEY_SERVER_URL, "https://third-eye-backend-a319.onrender.com") ?: "https://third-eye-backend-a319.onrender.com"

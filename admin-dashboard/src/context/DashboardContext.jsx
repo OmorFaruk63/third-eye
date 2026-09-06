@@ -315,6 +315,18 @@ export function DashboardProvider({ children }) {
     a.click();
   };
 
+  const handleStartRemoteRecording = (deviceId) => {
+    if (socket) {
+      socket.emit('start-remote-recording', { deviceId });
+    }
+  };
+
+  const handleStopRemoteRecording = (deviceId) => {
+    if (socket) {
+      socket.emit('stop-remote-recording', { deviceId });
+    }
+  };
+
   // Toggle selection for a recording
   const toggleSelectRecording = (id) => {
     setSelectedRecordings((prev) =>
@@ -472,6 +484,8 @@ export function DashboardProvider({ children }) {
         handleStopLiveStream,
         handleSwitchCamera,
         handleTakeSnapshot,
+        handleStartRemoteRecording,
+        handleStopRemoteRecording,
         toggleAudioMute,
         toggleSelectRecording,
         handleSelectAllToggle,
