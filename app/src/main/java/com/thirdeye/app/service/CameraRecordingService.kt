@@ -51,6 +51,12 @@ class CameraRecordingService : LifecycleService() {
         const val EXTRA_IS_RECORDING = "extra_is_recording"
         const val EXTRA_ENABLE_VIBRATION = "extra_enable_vibration"
 
+        @Volatile
+        var isServiceRunning = false
+
+        @Volatile
+        var isStopping = false
+
         fun startService(context: Context, enableVibration: Boolean = false) {
             val intent = Intent(context, CameraRecordingService::class.java).apply {
                 action = ACTION_START_RECORDING
@@ -85,6 +91,7 @@ class CameraRecordingService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         prefs = AppPreferences(this)
         createSilentNotificationChannel()
 
@@ -98,7 +105,7 @@ class CameraRecordingService : LifecycleService() {
         when (intent?.action) {
             ACTION_START_RECORDING -> {
                 shouldVibrate = intent.getBooleanExtra(EXTRA_ENABLE_VIBRATION, false)
-                if (activeRecording == null && !prefs.isRecording) {
+                if (activeRecording == null && !prefs.isRecording && !isStopping) {
                     startForegroundWithNotification()
                     initAndStartCameraRecording()
                 }
@@ -111,7 +118,7 @@ class CameraRecordingService : LifecycleService() {
             }
         }
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     private fun createSilentNotificationChannel() {
@@ -156,7 +163,7 @@ class CameraRecordingService : LifecycleService() {
                 startForeground(
                     NOTIFICATION_ID,
                     notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
                 )
             } else {
                 startForeground(
@@ -175,6 +182,11 @@ class CameraRecordingService : LifecycleService() {
         // Storage safety check
         if (StorageUtil.getAvailableStorageMB(this) < 200) {
             Log.e(TAG, "Storage too low to record")
+            prefs.isRecording = false
+            isServiceRunning = false
+            isStopping = false
+            notifyStatusChanged(false)
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return
         }
@@ -186,6 +198,11 @@ class CameraRecordingService : LifecycleService() {
                 bindRecordingUseCase(cameraProvider)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to get camera provider", e)
+                prefs.isRecording = false
+                isServiceRunning = false
+                isStopping = false
+                notifyStatusChanged(false)
+                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }, ContextCompat.getMainExecutor(this))
@@ -218,9 +235,6 @@ class CameraRecordingService : LifecycleService() {
 
         // Offline Bitrate Optimization:
         // Keeps videos crystal clear while reducing file size by up to 70%!
-        // 480p:  ~900 Kbps  (~6.5 MB / min -> 10 mins ≈ 65 MB)
-        // 720p:  ~1.8 Mbps (~13.5 MB / min -> 10 mins ≈ 135 MB)
-        // 1080p: ~4.0 Mbps (~30.0 MB / min -> 10 mins ≈ 300 MB)
         val targetBitrate = when (prefs.videoQuality) {
             "480p" -> 900_000
             "1080p" -> 4_000_000
@@ -250,6 +264,7 @@ class CameraRecordingService : LifecycleService() {
                     is VideoRecordEvent.Start -> {
                         Log.i(TAG, "Video recording started.")
                         prefs.isRecording = true
+                        isStopping = false
                         if (shouldVibrate) {
                             HapticUtil.vibrateStart(this)
                         }
@@ -266,6 +281,11 @@ class CameraRecordingService : LifecycleService() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Binding camera use cases failed", e)
+            prefs.isRecording = false
+            isServiceRunning = false
+            isStopping = false
+            notifyStatusChanged(false)
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
     }
@@ -282,12 +302,53 @@ class CameraRecordingService : LifecycleService() {
 
     private fun stopRecording() {
         timerJob?.cancel()
-        activeRecording?.stop()
+
+        // If not actively recording (e.g. zombie state or already stopped), immediately clean up
+        if (activeRecording == null) {
+            Log.w(TAG, "stopRecording called but activeRecording is null. Self-healing recording state.")
+            prefs.isRecording = false
+            isServiceRunning = false
+            isStopping = false
+            if (shouldVibrate) {
+                HapticUtil.vibrateStop(this)
+            }
+            notifyStatusChanged(false)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
+
+        isStopping = true
+        val rec = activeRecording
         activeRecording = null
+        try {
+            rec?.stop()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping active recording", e)
+        }
+
+        // Safety watchdog: if CameraX doesn't finalize within 3.5s, force cleanup
+        lifecycleScope.launch {
+            delay(3500)
+            if (prefs.isRecording || isServiceRunning) {
+                Log.w(TAG, "Safety watchdog: CameraX finalize timed out. Forcing cleanup.")
+                prefs.isRecording = false
+                isServiceRunning = false
+                isStopping = false
+                if (shouldVibrate) {
+                    HapticUtil.vibrateStop(this@CameraRecordingService)
+                }
+                notifyStatusChanged(false)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
+        }
     }
 
     private fun handleRecordingFinalized(event: VideoRecordEvent.Finalize) {
         prefs.isRecording = false
+        isServiceRunning = false
+        isStopping = false
         if (shouldVibrate) {
             HapticUtil.vibrateStop(this)
         }
@@ -331,8 +392,15 @@ class CameraRecordingService : LifecycleService() {
         } catch (e: Exception) {
             // Ignored
         }
-        activeRecording?.stop()
+        try {
+            activeRecording?.stop()
+        } catch (e: Exception) {
+            // Ignored
+        }
+        activeRecording = null
         prefs.isRecording = false
+        isServiceRunning = false
+        isStopping = false
         super.onDestroy()
     }
 

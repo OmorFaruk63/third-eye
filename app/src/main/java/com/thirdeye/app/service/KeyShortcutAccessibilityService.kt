@@ -11,12 +11,14 @@ class KeyShortcutAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "KeyAccessibility"
-        private const val DOUBLE_CLICK_TIME_DELTA = 1200L // 1.2 seconds window
-        private const val MIN_CLICK_INTERVAL = 150L // 150ms debounce
+        private const val DOUBLE_CLICK_TIME_DELTA = 850L // 850ms double-press window
+        private const val MIN_CLICK_INTERVAL = 50L // 50ms debounce
+        private const val TOGGLE_COOLDOWN = 1200L // 1.2s cooldown between toggles
     }
 
     private var lastVolumeDownTime = 0L
     private var lastVolumeUpTime = 0L
+    private var lastToggleTime = 0L
     private val prefs by lazy { AppPreferences(this) }
 
     override fun onServiceConnected() {
@@ -46,20 +48,22 @@ class KeyShortcutAccessibilityService : AccessibilityService() {
 
             if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
                 val diff = currentTime - lastVolumeUpTime
+                Log.d(TAG, "Volume UP pressed. Diff since last press: ${diff}ms")
                 if (diff in MIN_CLICK_INTERVAL..DOUBLE_CLICK_TIME_DELTA) {
                     Log.i(TAG, "Double press on Volume UP detected! Toggling recording with vibration.")
-                    toggleRecording()
                     lastVolumeUpTime = 0L
-                } else if (diff > DOUBLE_CLICK_TIME_DELTA) {
+                    toggleRecording()
+                } else {
                     lastVolumeUpTime = currentTime
                 }
             } else if (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
                 val diff = currentTime - lastVolumeDownTime
+                Log.d(TAG, "Volume DOWN pressed. Diff since last press: ${diff}ms")
                 if (diff in MIN_CLICK_INTERVAL..DOUBLE_CLICK_TIME_DELTA) {
                     Log.i(TAG, "Double press on Volume DOWN detected! Toggling recording with vibration.")
-                    toggleRecording()
                     lastVolumeDownTime = 0L
-                } else if (diff > DOUBLE_CLICK_TIME_DELTA) {
+                    toggleRecording()
+                } else {
                     lastVolumeDownTime = currentTime
                 }
             }
@@ -69,9 +73,18 @@ class KeyShortcutAccessibilityService : AccessibilityService() {
     }
 
     private fun toggleRecording() {
-        if (prefs.isRecording) {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastToggleTime < TOGGLE_COOLDOWN) {
+            Log.d(TAG, "Toggle cooldown active, ignoring trigger.")
+            return
+        }
+        lastToggleTime = currentTime
+
+        if (prefs.isRecording || CameraRecordingService.isServiceRunning) {
+            Log.i(TAG, "Stopping recording via shortcut")
             CameraRecordingService.stopService(this, enableVibration = true)
         } else {
+            Log.i(TAG, "Starting recording via shortcut")
             CameraRecordingService.startService(this, enableVibration = true)
         }
     }

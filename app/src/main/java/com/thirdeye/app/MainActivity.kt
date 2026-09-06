@@ -103,6 +103,11 @@ class MainActivity : AppCompatActivity() {
 
         timerHandler = Handler(Looper.getMainLooper())
 
+        // Self-heal zombie recording state: if prefs says recording but service is NOT running, reset to false!
+        if (prefs.isRecording && !CameraRecordingService.isServiceRunning) {
+            prefs.isRecording = false
+        }
+
         setupViews()
         checkPermissions()
         updateStatusBadges()
@@ -123,6 +128,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (prefs.isRecording && !CameraRecordingService.isServiceRunning) {
+            prefs.isRecording = false
+        }
         updateStatusBadges()
         updateRecordingUI(prefs.isRecording)
         BackendClient.sendPing(this)
@@ -130,12 +138,26 @@ class MainActivity : AppCompatActivity() {
         com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
     }
 
+    private var lastToggleClickTime = 0L
+
     private fun setupViews() {
         binding.btnToggleRecord.setOnClickListener {
-            if (prefs.isRecording) {
+            val now = System.currentTimeMillis()
+            if (now - lastToggleClickTime < 1200L) {
+                return@setOnClickListener // Debounce rapid clicks
+            }
+            lastToggleClickTime = now
+
+            if (prefs.isRecording || CameraRecordingService.isServiceRunning) {
+                binding.tvRecordStatus.text = "STOPPING..."
+                binding.btnToggleRecord.isEnabled = false
+                binding.btnToggleRecord.postDelayed({ binding.btnToggleRecord.isEnabled = true }, 1500)
                 CameraRecordingService.stopService(this, enableVibration = false)
             } else {
                 if (hasRequiredPermissions()) {
+                    binding.tvRecordStatus.text = "STARTING..."
+                    binding.btnToggleRecord.isEnabled = false
+                    binding.btnToggleRecord.postDelayed({ binding.btnToggleRecord.isEnabled = true }, 1500)
                     CameraRecordingService.startService(this, enableVibration = false)
                 } else {
                     checkPermissions()
