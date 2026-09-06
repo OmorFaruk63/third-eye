@@ -178,6 +178,58 @@ class GoogleDriveService {
       return false;
     }
   }
+
+  /**
+   * Helper to retrieve header value whether headers is a Web API Headers object or plain Object
+   */
+  getHeaderValue(headers, name) {
+    if (!headers) return null;
+    if (typeof headers.get === 'function') {
+      return headers.get(name);
+    }
+    return headers[name.toLowerCase()] || headers[name];
+  }
+
+  /**
+   * Streams video directly from Google Drive to HTTP response with HTTP 206 Partial Content (Range) support.
+   */
+  async streamVideo(driveFileId, req, res) {
+    if (!this.driveClient) {
+      throw new Error('Google Drive client is not authenticated');
+    }
+
+    const range = req.headers.range;
+    const requestOptions = {
+      fileId: driveFileId,
+      alt: 'media',
+    };
+
+    const config = {
+      responseType: 'stream',
+      headers: range ? { Range: range } : {},
+    };
+
+    const driveResponse = await this.driveClient.files.get(requestOptions, config);
+
+    res.statusCode = driveResponse.status;
+
+    const contentRange = this.getHeaderValue(driveResponse.headers, 'content-range');
+    const contentLength = this.getHeaderValue(driveResponse.headers, 'content-length');
+    const contentType = this.getHeaderValue(driveResponse.headers, 'content-type') || 'video/mp4';
+
+    if (contentRange) res.setHeader('Content-Range', contentRange);
+    if (contentLength) res.setHeader('Content-Length', contentLength);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    req.on('close', () => {
+      if (driveResponse.data && !driveResponse.data.destroyed) {
+        driveResponse.data.destroy();
+      }
+    });
+
+    driveResponse.data.pipe(res);
+  }
 }
 
 module.exports = new GoogleDriveService();

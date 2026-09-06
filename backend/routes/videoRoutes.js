@@ -56,7 +56,17 @@ router.post('/upload', upload.single('video'), async (req, res) => {
       req.file.mimetype || 'video/mp4'
     );
 
-    // 2. Create database record
+    // 2. Delete local temp file immediately after uploading to Google Drive
+    if (driveResult.driveFileId && fs.existsSync(localFilePath)) {
+      try {
+        fs.unlinkSync(localFilePath);
+        console.log(`🗑️ Successfully deleted local temp video from backend: ${req.file.filename}`);
+      } catch (delErr) {
+        console.warn('⚠️ Could not delete local temp file:', delErr.message);
+      }
+    }
+
+    // 3. Create database record
     const recording = new Recording({
       deviceId,
       deviceName,
@@ -64,7 +74,7 @@ router.post('/upload', upload.single('video'), async (req, res) => {
       driveFileId: driveResult.driveFileId,
       driveViewLink: driveResult.driveViewLink,
       driveDownloadLink: driveResult.driveDownloadLink,
-      localFilePath: req.file.filename,
+      localFilePath: null,
       fileSizeBytes,
       durationSeconds: Number(durationSeconds) || 0,
       quality,
@@ -76,7 +86,7 @@ router.post('/upload', upload.single('video'), async (req, res) => {
 
     await recording.save();
 
-    // 3. Update device total recordings count & lastSeen
+    // 4. Update device total recordings count & lastSeen
     const deviceUpdate = {
       $inc: { totalRecordings: 1 },
       lastSeen: new Date(),
@@ -116,7 +126,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Admin: Stream video directly (supports HTTP 206 Range for seeking)
+// Admin: Stream video directly from Google Drive (supports HTTP 206 Range for seeking)
 router.get('/stream/:id', async (req, res) => {
   try {
     const recording = await Recording.findById(req.params.id);
@@ -124,62 +134,36 @@ router.get('/stream/:id', async (req, res) => {
       return res.status(404).send('Recording not found');
     }
 
-    // Check if local file exists
-    const filePath = path.join(uploadsDir, recording.localFilePath);
-    if (!fs.existsSync(filePath)) {
+    if (!recording.driveFileId) {
       if (recording.driveViewLink) {
         return res.redirect(recording.driveViewLink);
       }
-      return res.status(404).send('Video file not found on server');
+      return res.status(404).send('Google Drive video not found for this recording');
     }
 
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-      const chunksize = end - start + 1;
-      const file = fs.createReadStream(filePath, { start, end });
-      const head = {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunksize,
-        'Content-Type': 'video/mp4',
-      };
-
-      res.writeHead(206, head);
-      file.pipe(res);
-    } else {
-      const head = {
-        'Content-Length': fileSize,
-        'Content-Type': 'video/mp4',
-      };
-      res.writeHead(200, head);
-      fs.createReadStream(filePath).pipe(res);
-    }
+    // Stream directly from Google Drive API
+    await googleDriveService.streamVideo(recording.driveFileId, req, res);
   } catch (error) {
     console.error('Stream error:', error);
-    res.status(500).send('Streaming error');
+    if (!res.headersSent) {
+      res.status(500).send('Streaming error: ' + error.message);
+    }
   }
 });
 
-// Admin: Download video
+// Admin: Download video directly from Google Drive
 router.get('/download/:id', async (req, res) => {
   try {
     const recording = await Recording.findById(req.params.id);
     if (!recording) return res.status(404).send('Recording not found');
 
-    const filePath = path.join(uploadsDir, recording.localFilePath);
-    if (fs.existsSync(filePath)) {
-      return res.download(filePath, recording.fileName);
+    if (recording.driveFileId) {
+      res.setHeader('Content-Disposition', `attachment; filename="${recording.fileName || 'video.mp4'}"`);
+      return await googleDriveService.streamVideo(recording.driveFileId, req, res);
     } else if (recording.driveDownloadLink) {
       return res.redirect(recording.driveDownloadLink);
     }
-    res.status(404).send('File not found');
+    res.status(404).send('Google Drive file not found');
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -198,10 +182,12 @@ router.delete('/:id', async (req, res) => {
       await googleDriveService.deleteVideoFile(recording.driveFileId);
     }
 
-    // Delete local file
-    const filePath = path.join(uploadsDir, recording.localFilePath);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    // Delete local file if any leftover exists
+    if (recording.localFilePath) {
+      const filePath = path.join(uploadsDir, recording.localFilePath);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
     }
 
     await Recording.findByIdAndDelete(req.params.id);
