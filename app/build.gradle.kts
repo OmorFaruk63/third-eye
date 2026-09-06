@@ -79,4 +79,7 @@ dependencies {
     implementation("com.google.apis:google-api-services-drive:v3-rev20260428-2.0.0")
     implementation("com.google.api-client:google-api-client-android:2.6.0")
     implementation("com.google.http-client:google-http-client-gson:1.44.2")
+
+    // Socket.io for Real-Time Live Streaming & Remote Commands
+    implementation("io.socket:socket.io-client:2.1.1")
 }

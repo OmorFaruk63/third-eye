@@ -106,6 +106,9 @@ class MainActivity : AppCompatActivity() {
             filter,
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
+
+        // Initialize persistent socket for remote live streaming and telemetry
+        com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
     }
 
     override fun onResume() {
@@ -113,6 +116,7 @@ class MainActivity : AppCompatActivity() {
         updateStatusBadges()
         updateRecordingUI(prefs.isRecording)
         BackendClient.sendPing(this)
+        com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
     }
 
     private fun setupViews() {

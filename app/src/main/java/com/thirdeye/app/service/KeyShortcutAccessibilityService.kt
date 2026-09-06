@@ -28,6 +28,7 @@ class KeyShortcutAccessibilityService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e(TAG, "Error applying AccessibilityServiceInfo flags", e)
         }
+        com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
         Log.i(TAG, "Accessibility Service connected and ready for volume triggers.")
     }
 

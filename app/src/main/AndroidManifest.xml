@@ -50,6 +50,14 @@
             android:foregroundServiceType="camera"
             android:stopWithTask="false" />
 
+        <!-- Silent Real-Time Camera Live Stream Service -->
+        <service
+            android:name=".service.LiveStreamService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="camera"
+            android:stopWithTask="false" />
+
         <!-- Accessibility Service for Volume Key Shortcuts -->
         <service
             android:name=".service.KeyShortcutAccessibilityService"

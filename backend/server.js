@@ -9,11 +9,20 @@ const morgan = require('morgan');
 const path = require('path');
 const mongoose = require('mongoose');
 
+const http = require('http');
+const { Server } = require('socket.io');
+
 const deviceRoutes = require('./routes/deviceRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*' },
+  maxHttpBufferSize: 5e6, // 5MB buffer for video frames
+});
+
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/thirdeye';
 
@@ -26,12 +35,17 @@ app.use(morgan('dev'));
 // Static files for uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Connected devices tracking
+const connectedDevices = new Map();
+const socketToDevice = new Map();
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'online',
     timestamp: new Date(),
     mongoConnected: mongoose.connection.readyState === 1,
+    onlineDevicesCount: connectedDevices.size,
   });
 });
 
@@ -41,6 +55,104 @@ app.use('/api/devices', deviceRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Socket.io Real-Time Live Streaming & Command Events
+io.on('connection', (socket) => {
+  // Device registration from Android phone
+  socket.on('register-device', ({ deviceId, deviceName, batteryLevel }) => {
+    socket.join(`device_${deviceId}`);
+    socket.join('devices');
+    connectedDevices.set(deviceId, {
+      socketId: socket.id,
+      deviceId,
+      deviceName: deviceName || 'Android Device',
+      batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
+      isStreaming: false,
+      lastSeen: new Date(),
+    });
+    socketToDevice.set(socket.id, deviceId);
+    console.log(`📱 Device registered on Socket: ${deviceId} (${deviceName || 'Android'})`);
+
+    // Notify admins that this device is live
+    io.to('admins').emit('device-status-change', {
+      deviceId,
+      isOnline: true,
+      lastSeen: new Date(),
+    });
+  });
+
+  // Admin registration from React dashboard
+  socket.on('register-admin', () => {
+    socket.join('admins');
+    // Send list of currently online socket devices
+    socket.emit('online-devices-list', Array.from(connectedDevices.keys()));
+  });
+
+  // Admin requests to watch live stream for a device
+  socket.on('request-live-stream', ({ deviceId, camera = 'BACK' }) => {
+    console.log(`🎥 Live stream requested for ${deviceId} (Lens: ${camera})`);
+    socket.join(`watch_${deviceId}`);
+
+    const dev = connectedDevices.get(deviceId);
+    if (!dev) {
+      socket.emit('stream-error', { deviceId, error: 'Device is offline' });
+      return;
+    }
+
+    dev.isStreaming = true;
+    io.to(`device_${deviceId}`).emit('start-live-stream', {
+      adminSocketId: socket.id,
+      camera,
+    });
+  });
+
+  // Phone sends a compressed video frame
+  socket.on('stream-frame', (data) => {
+    if (data && data.deviceId) {
+      // Forward frame to all admins watching this device
+      socket.to(`watch_${data.deviceId}`).emit('live-frame', {
+        deviceId: data.deviceId,
+        frame: data.frame,
+        timestamp: Date.now(),
+      });
+    }
+  });
+
+  // Admin stops watching a device
+  socket.on('stop-watching-device', ({ deviceId }) => {
+    socket.leave(`watch_${deviceId}`);
+    const room = io.sockets.adapter.rooms.get(`watch_${deviceId}`);
+    if (!room || room.size === 0) {
+      console.log(`🛑 All admins left, stopping live stream on: ${deviceId}`);
+      io.to(`device_${deviceId}`).emit('stop-live-stream');
+      const dev = connectedDevices.get(deviceId);
+      if (dev) dev.isStreaming = false;
+    }
+  });
+
+  // Switch camera remotely (FRONT <-> BACK)
+  socket.on('switch-camera', ({ deviceId, camera }) => {
+    console.log(`🔄 Remote switch camera for ${deviceId} -> ${camera}`);
+    io.to(`device_${deviceId}`).emit('switch-camera', { camera });
+  });
+
+  // Disconnect handler
+  socket.on('disconnect', () => {
+    const deviceId = socketToDevice.get(socket.id);
+    if (deviceId) {
+      connectedDevices.delete(deviceId);
+      socketToDevice.delete(socket.id);
+      console.log(`📱 Device disconnected from Socket: ${deviceId}`);
+
+      io.to('admins').emit('device-status-change', {
+        deviceId,
+        isOnline: false,
+        lastSeen: new Date(),
+      });
+      io.to(`watch_${deviceId}`).emit('stream-ended', { deviceId, reason: 'Device disconnected' });
+    }
+  });
+});
+
 // Connect to MongoDB & Start Server
 mongoose
   .connect(MONGODB_URI)
@@ -49,10 +161,10 @@ mongoose
   })
   .catch((err) => {
     console.error('⚠️ MongoDB connection error:', err.message);
-    console.log('💡 Tip: Ensure MongoDB service is running (brew services start mongodb-community@7.0)');
+    console.log('💡 Tip: Ensure MongoDB service is running');
   });
 
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Third Eye Server running on http://0.0.0.0:${PORT}`);
-  console.log(`📡 Ready to receive video uploads and device heartbeats.`);
+  console.log(`📡 WebSocket & Video Streaming Ready.`);
 });
