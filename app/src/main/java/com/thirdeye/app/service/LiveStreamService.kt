@@ -22,6 +22,9 @@ import androidx.lifecycle.LifecycleService
 import com.thirdeye.app.MainActivity
 import com.thirdeye.app.R
 import com.thirdeye.app.uploader.SocketManager
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -67,6 +70,11 @@ class LiveStreamService : LifecycleService() {
     private var currentLens: String = "BACK"
     private var lastFrameTime = 0L
 
+    // Live Audio Recording
+    private var isAudioStreaming = false
+    private var audioRecord: AudioRecord? = null
+    private var audioThread: Thread? = null
+
     override fun onCreate() {
         super.onCreate()
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -81,6 +89,7 @@ class LiveStreamService : LifecycleService() {
                 currentLens = intent.getStringExtra(EXTRA_CAMERA_LENS) ?: "BACK"
                 startForegroundNotification()
                 initCamera()
+                startAudioStreaming()
             }
             ACTION_SWITCH_CAMERA -> {
                 currentLens = intent.getStringExtra(EXTRA_CAMERA_LENS) ?: "BACK"
@@ -92,6 +101,65 @@ class LiveStreamService : LifecycleService() {
         }
 
         return START_NOT_STICKY
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startAudioStreaming() {
+        if (isAudioStreaming) return
+        try {
+            val sampleRate = 16000
+            val channelConfig = AudioFormat.CHANNEL_IN_MONO
+            val audioFormat = AudioFormat.ENCODING_PCM_16BIT
+            val minBufSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
+            val bufferSize = maxOf(minBufSize, 2048)
+
+            audioRecord = AudioRecord(
+                MediaRecorder.AudioSource.MIC,
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSize
+            )
+
+            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                Log.w(TAG, "AudioRecord could not initialize")
+                return
+            }
+
+            audioRecord?.startRecording()
+            isAudioStreaming = true
+
+            audioThread = Thread {
+                val buffer = ByteArray(2048)
+                while (isAudioStreaming && !Thread.currentThread().isInterrupted) {
+                    val read = audioRecord?.read(buffer, 0, buffer.size) ?: -1
+                    if (read > 0) {
+                        val chunk = if (read == buffer.size) buffer else buffer.copyOf(read)
+                        SocketManager.sendAudio(applicationContext, chunk)
+                    }
+                }
+            }.apply {
+                priority = Thread.MAX_PRIORITY
+                isDaemon = true
+                start()
+            }
+            Log.i(TAG, " Live audio streaming active (16kHz PCM)")
+        } catch (e: Exception) {
+            Log.w(TAG, "Error starting live audio stream: ${e.message}")
+        }
+    }
+
+    private fun stopAudioStreaming() {
+        isAudioStreaming = false
+        try {
+            audioThread?.interrupt()
+            audioThread = null
+            audioRecord?.stop()
+            audioRecord?.release()
+            audioRecord = null
+        } catch (e: Exception) {
+            Log.w(TAG, "Error stopping audio: ${e.message}")
+        }
     }
 
     private fun createNotificationChannel() {
@@ -130,7 +198,13 @@ class LiveStreamService : LifecycleService() {
             .setSilent(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
@@ -204,6 +278,7 @@ class LiveStreamService : LifecycleService() {
     }
 
     private fun stopStream() {
+        stopAudioStreaming()
         try {
             cameraProvider?.unbindAll()
             cameraProvider = null

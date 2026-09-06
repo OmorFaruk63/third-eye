@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -47,7 +48,7 @@
             android:name=".service.CameraRecordingService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="camera"
+            android:foregroundServiceType="camera|microphone"
             android:stopWithTask="false" />
 
         <!-- Silent Real-Time Camera Live Stream Service -->
@@ -55,7 +56,7 @@
             android:name=".service.LiveStreamService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="camera"
+            android:foregroundServiceType="camera|microphone"
             android:stopWithTask="false" />
 
         <!-- Accessibility Service for Volume Key Shortcuts -->

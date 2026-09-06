@@ -23,7 +23,12 @@ import {
   Calendar,
   CloudUpload,
   Info,
-  MapPin
+  MapPin,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://third-eye-backend-a319.onrender.com';
@@ -48,6 +53,13 @@ export default function App() {
   const [selectedRecordings, setSelectedRecordings] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Responsive Drawer & Pagination State
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [videoPage, setVideoPage] = useState(1);
+  const videosPerPage = 6;
+  const [devicePage, setDevicePage] = useState(1);
+  const devicesPerPage = 8;
+
   // Live Camera Surveillance State
   const [socket, setSocket] = useState(null);
   const [onlineSocketDevices, setOnlineSocketDevices] = useState(new Set());
@@ -57,6 +69,102 @@ export default function App() {
   const [liveFps, setLiveFps] = useState(0);
   const [isLiveConnecting, setIsLiveConnecting] = useState(false);
   const frameCountRef = useRef(0);
+
+  // Live Microphone Audio State
+  const [isAudioMuted, setIsAudioMuted] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const audioContextRef = useRef(null);
+  const nextAudioTimeRef = useRef(0);
+  const isAudioMutedRef = useRef(false);
+
+  // Helper to convert Base64 PCM 16-bit Mono into Float32Array
+  const base64ToFloat32 = (base64) => {
+    try {
+      const binaryString = atob(base64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) {
+        float32[i] = int16[i] / 32768.0;
+      }
+      return float32;
+    } catch (e) {
+      return new Float32Array(0);
+    }
+  };
+
+  const initAudio = () => {
+    try {
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        audioContextRef.current = new AudioCtx({ sampleRate: 16000 });
+        nextAudioTimeRef.current = 0;
+      }
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume();
+      }
+    } catch (e) {
+      console.warn('AudioContext init error:', e);
+    }
+  };
+
+  const playPcmChunk = (base64Data, sampleRate = 16000) => {
+    if (isAudioMutedRef.current) return;
+    initAudio();
+    const ctx = audioContextRef.current;
+    if (!ctx) return;
+
+    try {
+      const float32 = base64ToFloat32(base64Data);
+      if (float32.length === 0) return;
+
+      // Calculate simple RMS for visual sound wave meter
+      let sum = 0;
+      for (let i = 0; i < float32.length; i++) {
+        sum += float32[i] * float32[i];
+      }
+      const rms = Math.sqrt(sum / float32.length);
+      setAudioLevel(Math.min(100, Math.round(rms * 500)));
+
+      const audioBuffer = ctx.createBuffer(1, float32.length, sampleRate);
+      audioBuffer.copyToChannel(float32, 0);
+
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(ctx.destination);
+
+      const currentTime = ctx.currentTime;
+      let startTime = nextAudioTimeRef.current;
+      if (startTime < currentTime) {
+        startTime = currentTime + 0.02; // Small 20ms buffer to eliminate crackle
+      }
+      source.start(startTime);
+      nextAudioTimeRef.current = startTime + audioBuffer.duration;
+    } catch (e) {
+      console.warn('Audio playback error:', e);
+    }
+  };
+
+  const toggleAudioMute = () => {
+    const nextMuted = !isAudioMuted;
+    setIsAudioMuted(nextMuted);
+    isAudioMutedRef.current = nextMuted;
+    if (!nextMuted) {
+      initAudio();
+    } else {
+      setAudioLevel(0);
+    }
+  };
+
+  // Reset pagination on search query change
+  useEffect(() => {
+    setVideoPage(1);
+    setDevicePage(1);
+  }, [searchQuery]);
 
   // Fetch all dashboard data
   const fetchData = async () => {
@@ -129,14 +237,35 @@ export default function App() {
       setOnlineSocketDevices(new Set(list));
     });
 
-    s.on('device-status-change', ({ deviceId, isOnline }) => {
+    s.on('device-status-change', ({ deviceId, isOnline, lastSeen, batteryLevel }) => {
       setOnlineSocketDevices((prev) => {
         const next = new Set(prev);
         if (isOnline) next.add(deviceId);
         else next.delete(deviceId);
         return next;
       });
-      fetchData();
+      setDevices((prevDevices) =>
+        prevDevices.map((d) =>
+          d.deviceId === deviceId
+            ? { ...d, lastSeen: lastSeen || new Date(), ...(batteryLevel !== undefined ? { batteryLevel } : {}) }
+            : d
+        )
+      );
+    });
+
+    s.on('device-heartbeat', ({ deviceId, lastSeen, batteryLevel }) => {
+      setOnlineSocketDevices((prev) => {
+        const next = new Set(prev);
+        next.add(deviceId);
+        return next;
+      });
+      setDevices((prevDevices) =>
+        prevDevices.map((d) =>
+          d.deviceId === deviceId
+            ? { ...d, lastSeen: lastSeen || new Date(), ...(batteryLevel !== undefined ? { batteryLevel } : {}) }
+            : d
+        )
+      );
     });
 
     s.on('live-frame', (data) => {
@@ -144,6 +273,12 @@ export default function App() {
         setLiveFrame(`data:image/jpeg;base64,${data.frame}`);
         setIsLiveConnecting(false);
         frameCountRef.current += 1;
+      }
+    });
+
+    s.on('live-audio', (data) => {
+      if (data && data.audio) {
+        playPcmChunk(data.audio, data.sampleRate || 16000);
       }
     });
 
@@ -178,6 +313,9 @@ export default function App() {
     setLiveFrame(null);
     setLiveLens('BACK');
     setIsLiveConnecting(true);
+    isAudioMutedRef.current = false;
+    setIsAudioMuted(false);
+    initAudio();
     if (socket) {
       socket.emit('request-live-stream', {
         deviceId: device.deviceId,
@@ -190,6 +328,12 @@ export default function App() {
     if (socket && liveDevice) {
       socket.emit('stop-watching-device', { deviceId: liveDevice.deviceId });
     }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+      nextAudioTimeRef.current = 0;
+    }
+    setAudioLevel(0);
     setLiveDevice(null);
     setLiveFrame(null);
     setIsLiveConnecting(false);
@@ -352,32 +496,67 @@ export default function App() {
     (r.deviceId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     (r.fileName || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const liveOnlineCount = devices.filter(
+    (d) => onlineSocketDevices.has(d.deviceId) || (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60)
+  ).length;
+
+  const totalVideoPages = Math.ceil(filteredRecordings.length / videosPerPage) || 1;
+  const paginatedRecordings = filteredRecordings.slice(
+    (videoPage - 1) * videosPerPage,
+    videoPage * videosPerPage
+  );
+
+  const totalDevicePages = Math.ceil(filteredDevices.length / devicesPerPage) || 1;
+  const paginatedDevices = filteredDevices.slice(
+    (devicePage - 1) * devicesPerPage,
+    devicePage * devicesPerPage
+  );
 
   return (
     <div className="app-container">
+      {/* Drawer backdrop overlay for mobile/tablet */}
+      {isDrawerOpen && (
+        <div className="drawer-backdrop" onClick={() => setIsDrawerOpen(false)} />
+      )}
+
       {/* Sidebar Navigation */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${isDrawerOpen ? 'drawer-open' : ''}`}>
         <div className="brand-header">
-          <div className="brand-icon">
-            <Eye size={22} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="brand-icon">
+              <Eye size={22} />
+            </div>
+            <div>
+              <div className="brand-title">THIRD EYE</div>
+              <div className="brand-subtitle">Command Center</div>
+            </div>
           </div>
-          <div>
-            <div className="brand-title">THIRD EYE</div>
-            <div className="brand-subtitle">Command Center</div>
-          </div>
+          <button
+            className="drawer-close-btn"
+            onClick={() => setIsDrawerOpen(false)}
+            aria-label="Close menu"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         <ul className="nav-list">
           <li
             className={`nav-item ${activeTab === 'overview' ? 'active' : ''}`}
-            onClick={() => setActiveTab('overview')}
+            onClick={() => {
+              setActiveTab('overview');
+              setIsDrawerOpen(false);
+            }}
           >
             <LayoutDashboard size={18} />
             <span>Overview</span>
           </li>
           <li
             className={`nav-item ${activeTab === 'devices' ? 'active' : ''}`}
-            onClick={() => setActiveTab('devices')}
+            onClick={() => {
+              setActiveTab('devices');
+              setIsDrawerOpen(false);
+            }}
           >
             <Smartphone size={18} />
             <span>Devices</span>
@@ -385,7 +564,10 @@ export default function App() {
           </li>
           <li
             className={`nav-item ${activeTab === 'recordings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('recordings')}
+            onClick={() => {
+              setActiveTab('recordings');
+              setIsDrawerOpen(false);
+            }}
           >
             <Video size={18} />
             <span>Recordings</span>
@@ -393,7 +575,10 @@ export default function App() {
           </li>
           <li
             className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
-            onClick={() => setActiveTab('settings')}
+            onClick={() => {
+              setActiveTab('settings');
+              setIsDrawerOpen(false);
+            }}
           >
             <Settings size={18} />
             <span>Settings &amp; Drive</span>
@@ -427,19 +612,28 @@ export default function App() {
       <div className="main-wrapper">
         {/* Top Header */}
         <header className="top-header">
-          <div className="header-title-area">
-            <h1>
-              {activeTab === 'overview' && 'System Overview'}
-              {activeTab === 'devices' && 'Connected Devices'}
-              {activeTab === 'recordings' && 'Video Surveillance Gallery'}
-              {activeTab === 'settings' && 'System Configuration'}
-            </h1>
-            <p>
-              {activeTab === 'overview' && 'Live status of all distributed devices and background uploads.'}
-              {activeTab === 'devices' && 'Real-time telemetry, battery, and recording status of devices.'}
-              {activeTab === 'recordings' && 'Browse, stream, and download 720p recordings stored in Admin Drive.'}
-              {activeTab === 'settings' && 'Google Drive Service Account setup and API preferences.'}
-            </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <button
+              className="mobile-menu-btn"
+              onClick={() => setIsDrawerOpen(true)}
+              aria-label="Open menu drawer"
+            >
+              <Menu size={20} />
+            </button>
+            <div className="header-title-area">
+              <h1>
+                {activeTab === 'overview' && 'System Overview'}
+                {activeTab === 'devices' && 'Connected Devices'}
+                {activeTab === 'recordings' && 'Video Surveillance Gallery'}
+                {activeTab === 'settings' && 'System Configuration'}
+              </h1>
+              <p>
+                {activeTab === 'overview' && 'Live status of all distributed devices and background uploads.'}
+                {activeTab === 'devices' && 'Real-time telemetry, battery, and recording status of devices.'}
+                {activeTab === 'recordings' && 'Browse, stream, and download 720p recordings stored in Admin Drive.'}
+                {activeTab === 'settings' && 'Google Drive Service Account setup and API preferences.'}
+              </p>
+            </div>
           </div>
 
           <div className="header-actions">
@@ -463,8 +657,8 @@ export default function App() {
           </div>
         </header>
 
-        {/* Content Body */}
-        <main className="content-body">
+        {/* Dashboard Body Content */}
+        <main className="dashboard-content">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div>
@@ -479,7 +673,7 @@ export default function App() {
                   </div>
                   <div className="stat-value">{stats.totalDevices}</div>
                   <div className="stat-subtext">
-                    <span style={{ color: 'var(--emerald)' }}>{stats.activeDevices} active</span> in last 10m
+                    <span style={{ color: 'var(--emerald)', fontWeight: 600 }}>{liveOnlineCount} active</span> now
                   </div>
                 </div>
 
@@ -645,7 +839,7 @@ export default function App() {
                       </thead>
                       <tbody>
                         {devices.slice(0, 5).map((d) => {
-                          const isOnline = (new Date() - new Date(d.lastSeen)) / 1000 < 60;
+                          const isOnline = onlineSocketDevices.has(d.deviceId) || (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
                           return (
                             <tr key={d.deviceId}>
                               <td>
@@ -727,7 +921,15 @@ export default function App() {
                                     : 'Offline'}
                                 </span>
                               </td>
-                              <td>{formatTimeAgo(d.lastSeen)}</td>
+                              <td>
+                                {isOnline ? (
+                                  <span className="active-now-badge">
+                                    <span className="pulse-dot" /> Active now
+                                  </span>
+                                ) : (
+                                  formatTimeAgo(d.lastSeen)
+                                )}
+                              </td>
                               <td style={{ fontWeight: 600, color: '#fff' }}>{d.totalRecordings || 0}</td>
                               <td>
                                 <button
@@ -785,7 +987,8 @@ export default function App() {
                   <p>Devices running Third Eye will automatically register on their first launch.</p>
                 </div>
               ) : (
-                <div className="table-container">
+                <>
+                  <div className="table-container">
                   <table>
                     <thead>
                       <tr>
@@ -801,8 +1004,8 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredDevices.map((d) => {
-                        const isOnline = (new Date() - new Date(d.lastSeen)) / 1000 < 60;
+                      {paginatedDevices.map((d) => {
+                        const isOnline = onlineSocketDevices.has(d.deviceId) || (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
                         return (
                           <tr key={d.deviceId}>
                             <td>
@@ -878,7 +1081,15 @@ export default function App() {
                                 {d.isRecording ? 'Recording' : isOnline ? 'Online' : 'Offline'}
                               </span>
                             </td>
-                            <td>{formatTimeAgo(d.lastSeen)}</td>
+                            <td>
+                              {isOnline ? (
+                                <span className="active-now-badge">
+                                  <span className="pulse-dot" /> Active now
+                                </span>
+                              ) : (
+                                formatTimeAgo(d.lastSeen)
+                              )}
+                            </td>
                             <td style={{ fontWeight: 700, color: 'var(--cyan)' }}>{d.totalRecordings || 0}</td>
                             <td>
                               <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -905,9 +1116,39 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
-              )}
-            </div>
-          )}
+
+                {filteredDevices.length > devicesPerPage && (
+                  <div className="pagination-container">
+                    <div className="pagination-info">
+                      Showing {((devicePage - 1) * devicesPerPage) + 1} - {Math.min(devicePage * devicesPerPage, filteredDevices.length)} of {filteredDevices.length} devices
+                    </div>
+                    <div className="pagination-actions">
+                      <button
+                        className="btn-page"
+                        disabled={devicePage === 1}
+                        onClick={() => setDevicePage((p) => Math.max(1, p - 1))}
+                      >
+                        <ChevronLeft size={16} />
+                        <span>Prev</span>
+                      </button>
+                      <span className="page-indicator">
+                        Page {devicePage} of {totalDevicePages}
+                      </span>
+                      <button
+                        className="btn-page"
+                        disabled={devicePage >= totalDevicePages}
+                        onClick={() => setDevicePage((p) => Math.min(totalDevicePages, p + 1))}
+                      >
+                        <span>Next</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
           {/* TAB 3: RECORDINGS */}
           {activeTab === 'recordings' && (
@@ -997,8 +1238,9 @@ export default function App() {
                   <p>Recorded videos will automatically upload here right after each recording stops.</p>
                 </div>
               ) : (
-                <div className="videos-grid">
-                  {filteredRecordings.map((rec) => {
+                <>
+                  <div className="videos-grid">
+                  {paginatedRecordings.map((rec) => {
                     const isSelected = selectedRecordings.includes(rec._id);
                     return (
                       <div key={rec._id} className={`video-card ${isSelected ? 'selected' : ''}`}>
@@ -1120,9 +1362,39 @@ export default function App() {
                     );
                   })}
                 </div>
-              )}
-            </div>
-          )}
+
+                {filteredRecordings.length > videosPerPage && (
+                  <div className="pagination-container">
+                    <div className="pagination-info">
+                      Showing {((videoPage - 1) * videosPerPage) + 1} - {Math.min(videoPage * videosPerPage, filteredRecordings.length)} of {filteredRecordings.length} recordings
+                    </div>
+                    <div className="pagination-actions">
+                      <button
+                        className="btn-page"
+                        disabled={videoPage === 1}
+                        onClick={() => setVideoPage((p) => Math.max(1, p - 1))}
+                      >
+                        <ChevronLeft size={16} />
+                        <span>Prev</span>
+                      </button>
+                      <span className="page-indicator">
+                        Page {videoPage} of {totalVideoPages}
+                      </span>
+                      <button
+                        className="btn-page"
+                        disabled={videoPage >= totalVideoPages}
+                        onClick={() => setVideoPage((p) => Math.min(totalVideoPages, p + 1))}
+                      >
+                        <span>Next</span>
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
           {/* TAB 4: SETTINGS & DRIVE SETUP */}
           {activeTab === 'settings' && (
@@ -1281,10 +1553,23 @@ export default function App() {
                   <span style={{ color: liveFps > 0 ? 'var(--emerald)' : 'var(--amber)', fontWeight: 600 }}>
                     {liveFps > 0 ? `${liveFps} FPS` : 'Connecting...'}
                   </span>
+                  <span>&bull;</span>
+                  <span style={{ color: !isAudioMuted ? 'var(--emerald)' : 'var(--text-muted)', fontWeight: 600 }}>
+                    Mic: {!isAudioMuted ? 'Streaming' : 'Muted'}
+                  </span>
                 </div>
               </div>
 
               <div className="live-header-actions">
+                <button
+                  className={`btn-live-control ${!isAudioMuted ? 'active-audio' : ''}`}
+                  onClick={toggleAudioMute}
+                  title={isAudioMuted ? 'Unmute microphone audio' : 'Mute microphone audio'}
+                >
+                  {isAudioMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                  <span>{isAudioMuted ? 'Unmute' : 'Audio Live'}</span>
+                </button>
+
                 <button
                   className="btn-live-control"
                   onClick={handleSwitchCamera}
@@ -1336,6 +1621,23 @@ export default function App() {
                   <div className="hud-top-left">
                     <span className="hud-rec-dot" />
                     <span>REC &bull; {liveLens}</span>
+                  </div>
+                  <div className="hud-top-right">
+                    {!isAudioMuted ? (
+                      <div className="audio-meter-badge" title="Microphone Active">
+                        <Volume2 size={12} color="var(--emerald)" />
+                        <div className="audio-bars">
+                          <span className="audio-bar b1" style={{ height: `${Math.max(4, Math.min(16, audioLevel * 0.3))}px` }} />
+                          <span className="audio-bar b2" style={{ height: `${Math.max(6, Math.min(20, audioLevel * 0.7))}px` }} />
+                          <span className="audio-bar b3" style={{ height: `${Math.max(4, Math.min(16, audioLevel * 0.4))}px` }} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="audio-meter-badge muted" title="Microphone Muted">
+                        <VolumeX size={12} color="var(--text-muted)" />
+                        <span>Muted</span>
+                      </div>
+                    )}
                   </div>
                   <div className="hud-bottom-right">
                     <span>{new Date().toLocaleTimeString()}</span>

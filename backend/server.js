@@ -15,6 +15,7 @@ const { Server } = require('socket.io');
 const deviceRoutes = require('./routes/deviceRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const Device = require('./models/Device');
 
 const app = express();
 const server = http.createServer(app);
@@ -58,25 +59,64 @@ app.use('/api/admin', adminRoutes);
 // Socket.io Real-Time Live Streaming & Command Events
 io.on('connection', (socket) => {
   // Device registration from Android phone
-  socket.on('register-device', ({ deviceId, deviceName, batteryLevel }) => {
+  socket.on('register-device', async ({ deviceId, deviceName, batteryLevel }) => {
     socket.join(`device_${deviceId}`);
     socket.join('devices');
+    const now = new Date();
     connectedDevices.set(deviceId, {
       socketId: socket.id,
       deviceId,
       deviceName: deviceName || 'Android Device',
       batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
       isStreaming: false,
-      lastSeen: new Date(),
+      lastSeen: now,
     });
     socketToDevice.set(socket.id, deviceId);
     console.log(`📱 Device registered on Socket: ${deviceId} (${deviceName || 'Android'})`);
+
+    // Keep MongoDB lastSeen up to date
+    try {
+      await Device.findOneAndUpdate(
+        { deviceId },
+        { lastSeen: now, ...(batteryLevel !== undefined ? { batteryLevel } : {}) }
+      );
+    } catch (e) {
+      console.error('Error updating device lastSeen on register:', e.message);
+    }
 
     // Notify admins that this device is live
     io.to('admins').emit('device-status-change', {
       deviceId,
       isOnline: true,
-      lastSeen: new Date(),
+      lastSeen: now,
+      batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
+    });
+  });
+
+  // Device periodic heartbeat (every 20s from phone)
+  socket.on('device-heartbeat', async ({ deviceId, batteryLevel }) => {
+    if (!deviceId) return;
+    const now = new Date();
+    const dev = connectedDevices.get(deviceId);
+    if (dev) {
+      dev.lastSeen = now;
+      if (batteryLevel !== undefined) dev.batteryLevel = batteryLevel;
+    }
+
+    try {
+      await Device.findOneAndUpdate(
+        { deviceId },
+        { lastSeen: now, ...(batteryLevel !== undefined ? { batteryLevel } : {}) }
+      );
+    } catch (e) {
+      // ignore
+    }
+
+    io.to('admins').emit('device-heartbeat', {
+      deviceId,
+      lastSeen: now,
+      batteryLevel,
+      isOnline: true,
     });
   });
 
@@ -117,6 +157,20 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Phone sends real-time microphone audio chunk (PCM)
+  socket.on('stream-audio', (data) => {
+    if (data && data.deviceId) {
+      // Forward audio to all admins watching this device
+      socket.to(`watch_${data.deviceId}`).emit('live-audio', {
+        deviceId: data.deviceId,
+        audio: data.audio,
+        sampleRate: data.sampleRate || 16000,
+        channels: data.channels || 1,
+        timestamp: Date.now(),
+      });
+    }
+  });
+
   // Admin stops watching a device
   socket.on('stop-watching-device', ({ deviceId }) => {
     socket.leave(`watch_${deviceId}`);
@@ -136,17 +190,22 @@ io.on('connection', (socket) => {
   });
 
   // Disconnect handler
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     const deviceId = socketToDevice.get(socket.id);
     if (deviceId) {
       connectedDevices.delete(deviceId);
       socketToDevice.delete(socket.id);
+      const now = new Date();
       console.log(`📱 Device disconnected from Socket: ${deviceId}`);
+
+      try {
+        await Device.findOneAndUpdate({ deviceId }, { lastSeen: now });
+      } catch (e) {}
 
       io.to('admins').emit('device-status-change', {
         deviceId,
         isOnline: false,
-        lastSeen: new Date(),
+        lastSeen: now,
       });
       io.to(`watch_${deviceId}`).emit('stream-ended', { deviceId, reason: 'Device disconnected' });
     }

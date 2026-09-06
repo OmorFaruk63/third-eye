@@ -38,10 +38,13 @@ object SocketManager {
                 isConnecting = false
                 Log.i(TAG, " Connected to central backend socket!")
                 registerDevice(context)
+                startHeartbeat(context)
             }
 
             socket?.on(Socket.EVENT_DISCONNECT) {
                 isConnecting = false
+                heartbeatThread?.interrupt()
+                heartbeatThread = null
                 Log.w(TAG, " Disconnected from backend socket")
             }
 
@@ -87,6 +90,31 @@ object SocketManager {
         }
     }
 
+    private var heartbeatThread: Thread? = null
+
+    private fun startHeartbeat(context: Context) {
+        heartbeatThread?.interrupt()
+        heartbeatThread = Thread {
+            try {
+                while (!Thread.currentThread().isInterrupted && socket?.connected() == true) {
+                    Thread.sleep(20000)
+                    val battery = BackendClient.getBatteryLevel(context)
+                    val payload = JSONObject().apply {
+                        put("deviceId", BackendClient.getDeviceId(context))
+                        put("batteryLevel", battery)
+                        put("timestamp", System.currentTimeMillis())
+                    }
+                    socket?.emit("device-heartbeat", payload)
+                }
+            } catch (e: InterruptedException) {
+                // Thread interrupted
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+    }
+
     private fun registerDevice(context: Context) {
         try {
             val deviceId = BackendClient.getDeviceId(context)
@@ -124,11 +152,32 @@ object SocketManager {
         }
     }
 
+    /**
+     * Streams raw PCM 16-bit 16kHz audio chunk to backend over WebSocket
+     */
+    fun sendAudio(context: Context, pcmBytes: ByteArray) {
+        if (socket?.connected() != true) return
+
+        try {
+            val base64Audio = Base64.encodeToString(pcmBytes, Base64.NO_WRAP)
+            val payload = JSONObject().apply {
+                put("deviceId", BackendClient.getDeviceId(context))
+                put("audio", base64Audio)
+                put("sampleRate", 16000)
+            }
+            socket?.emit("stream-audio", payload)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed sending audio: ${e.message}")
+        }
+    }
+
     fun isConnected(): Boolean {
         return socket?.connected() == true
     }
 
     fun disconnect() {
+        heartbeatThread?.interrupt()
+        heartbeatThread = null
         socket?.disconnect()
         socket?.off()
         socket = null
