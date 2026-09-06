@@ -173,6 +173,7 @@ class LiveStreamService : LifecycleService() {
                 enableLights(false)
                 enableVibration(false)
                 setSound(null, null)
+                lockscreenVisibility = Notification.VISIBILITY_SECRET
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(channel)
@@ -193,6 +194,7 @@ class LiveStreamService : LifecycleService() {
             .setSmallIcon(R.drawable.ic_camera_record)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)

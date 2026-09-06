@@ -1,7 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { io } from 'socket.io-client';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
+import { io } from "socket.io-client";
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://third-eye-backend-a319.onrender.com';
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "https://third-eye-backend-a319.onrender.com";
 
 const DashboardContext = createContext(null);
 
@@ -18,9 +25,9 @@ export function DashboardProvider({ children }) {
   const [recordings, setRecordings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [serverOnline, setServerOnline] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedRecordings, setSelectedRecordings] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -29,7 +36,7 @@ export function DashboardProvider({ children }) {
   const [onlineSocketDevices, setOnlineSocketDevices] = useState(new Set());
   const [liveDevice, setLiveDevice] = useState(null);
   const [liveFrame, setLiveFrame] = useState(null);
-  const [liveLens, setLiveLens] = useState('BACK');
+  const [liveLens, setLiveLens] = useState("BACK");
   const [liveFps, setLiveFps] = useState(0);
   const [isLiveConnecting, setIsLiveConnecting] = useState(false);
   const frameCountRef = useRef(0);
@@ -50,7 +57,11 @@ export function DashboardProvider({ children }) {
       for (let i = 0; i < len; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, Math.floor(bytes.byteLength / 2));
+      const int16 = new Int16Array(
+        bytes.buffer,
+        bytes.byteOffset,
+        Math.floor(bytes.byteLength / 2),
+      );
       const float32 = new Float32Array(int16.length);
       for (let i = 0; i < int16.length; i++) {
         float32[i] = int16[i] / 32768.0;
@@ -63,16 +74,19 @@ export function DashboardProvider({ children }) {
 
   const initAudio = () => {
     try {
-      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+      if (
+        !audioContextRef.current ||
+        audioContextRef.current.state === "closed"
+      ) {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         audioContextRef.current = new AudioCtx({ sampleRate: 16000 });
         nextAudioTimeRef.current = 0;
       }
-      if (audioContextRef.current.state === 'suspended') {
+      if (audioContextRef.current.state === "suspended") {
         audioContextRef.current.resume();
       }
     } catch (e) {
-      console.warn('AudioContext init error:', e);
+      console.warn("AudioContext init error:", e);
     }
   };
 
@@ -108,7 +122,7 @@ export function DashboardProvider({ children }) {
       source.start(startTime);
       nextAudioTimeRef.current = startTime + audioBuffer.duration;
     } catch (e) {
-      console.warn('Audio playback error:', e);
+      console.warn("Audio playback error:", e);
     }
   };
 
@@ -128,7 +142,9 @@ export function DashboardProvider({ children }) {
     setLoading(true);
     try {
       // 1. Health check
-      const healthRes = await fetch(`${API_BASE_URL}/api/health`).catch(() => null);
+      const healthRes = await fetch(`${API_BASE_URL}/api/health`).catch(
+        () => null,
+      );
       if (!healthRes || !healthRes.ok) {
         setServerOnline(false);
         setLoading(false);
@@ -157,7 +173,7 @@ export function DashboardProvider({ children }) {
         if (recData.success) setRecordings(recData.recordings);
       }
     } catch (err) {
-      console.error('Failed fetching data:', err);
+      console.error("Failed fetching data:", err);
       setServerOnline(false);
     } finally {
       setLoading(false);
@@ -180,37 +196,44 @@ export function DashboardProvider({ children }) {
   // Connect to Socket.io for Real-Time Camera Streaming & Remote Controls
   useEffect(() => {
     const s = io(API_BASE_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ["websocket", "polling"],
       reconnectionAttempts: 20,
       reconnectionDelay: 2000,
     });
 
-    s.on('connect', () => {
-      console.log('⚡ Admin connected to real-time socket');
-      s.emit('register-admin');
+    s.on("connect", () => {
+      console.log("⚡ Admin connected to real-time socket");
+      s.emit("register-admin");
     });
 
-    s.on('online-devices-list', (list) => {
+    s.on("online-devices-list", (list) => {
       setOnlineSocketDevices(new Set(list));
     });
 
-    s.on('device-status-change', ({ deviceId, isOnline, lastSeen, batteryLevel }) => {
-      setOnlineSocketDevices((prev) => {
-        const next = new Set(prev);
-        if (isOnline) next.add(deviceId);
-        else next.delete(deviceId);
-        return next;
-      });
-      setDevices((prevDevices) =>
-        prevDevices.map((d) =>
-          d.deviceId === deviceId
-            ? { ...d, lastSeen: lastSeen || new Date(), ...(batteryLevel !== undefined ? { batteryLevel } : {}) }
-            : d
-        )
-      );
-    });
+    s.on(
+      "device-status-change",
+      ({ deviceId, isOnline, lastSeen, batteryLevel }) => {
+        setOnlineSocketDevices((prev) => {
+          const next = new Set(prev);
+          if (isOnline) next.add(deviceId);
+          else next.delete(deviceId);
+          return next;
+        });
+        setDevices((prevDevices) =>
+          prevDevices.map((d) =>
+            d.deviceId === deviceId
+              ? {
+                  ...d,
+                  lastSeen: lastSeen || new Date(),
+                  ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+                }
+              : d,
+          ),
+        );
+      },
+    );
 
-    s.on('device-heartbeat', ({ deviceId, lastSeen, batteryLevel }) => {
+    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel }) => {
       setOnlineSocketDevices((prev) => {
         const next = new Set(prev);
         next.add(deviceId);
@@ -219,13 +242,17 @@ export function DashboardProvider({ children }) {
       setDevices((prevDevices) =>
         prevDevices.map((d) =>
           d.deviceId === deviceId
-            ? { ...d, lastSeen: lastSeen || new Date(), ...(batteryLevel !== undefined ? { batteryLevel } : {}) }
-            : d
-        )
+            ? {
+                ...d,
+                lastSeen: lastSeen || new Date(),
+                ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+              }
+            : d,
+        ),
       );
     });
 
-    s.on('live-frame', (data) => {
+    s.on("live-frame", (data) => {
       if (data && data.frame) {
         setLiveFrame(`data:image/jpeg;base64,${data.frame}`);
         setIsLiveConnecting(false);
@@ -233,19 +260,19 @@ export function DashboardProvider({ children }) {
       }
     });
 
-    s.on('live-audio', (data) => {
+    s.on("live-audio", (data) => {
       if (data && data.audio) {
         playPcmChunk(data.audio, data.sampleRate || 16000);
       }
     });
 
-    s.on('stream-error', (err) => {
-      alert(`Live stream error: ${err.error || 'Device unavailable'}`);
+    s.on("stream-error", (err) => {
+      alert(`Live stream error: ${err.error || "Device unavailable"}`);
       setIsLiveConnecting(false);
       setLiveDevice(null);
     });
 
-    s.on('stream-ended', () => {
+    s.on("stream-ended", () => {
       setIsLiveConnecting(false);
       setLiveDevice(null);
       setLiveFrame(null);
@@ -268,22 +295,22 @@ export function DashboardProvider({ children }) {
   const handleStartLiveStream = (device) => {
     setLiveDevice(device);
     setLiveFrame(null);
-    setLiveLens('BACK');
+    setLiveLens("BACK");
     setIsLiveConnecting(true);
     isAudioMutedRef.current = false;
     setIsAudioMuted(false);
     initAudio();
     if (socket) {
-      socket.emit('request-live-stream', {
+      socket.emit("request-live-stream", {
         deviceId: device.deviceId,
-        camera: 'BACK',
+        camera: "BACK",
       });
     }
   };
 
   const handleStopLiveStream = () => {
     if (socket && liveDevice) {
-      socket.emit('stop-watching-device', { deviceId: liveDevice.deviceId });
+      socket.emit("stop-watching-device", { deviceId: liveDevice.deviceId });
     }
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
@@ -297,10 +324,10 @@ export function DashboardProvider({ children }) {
   };
 
   const handleSwitchCamera = () => {
-    const nextLens = liveLens === 'BACK' ? 'FRONT' : 'BACK';
+    const nextLens = liveLens === "BACK" ? "FRONT" : "BACK";
     setLiveLens(nextLens);
     if (socket && liveDevice) {
-      socket.emit('switch-camera', {
+      socket.emit("switch-camera", {
         deviceId: liveDevice.deviceId,
         camera: nextLens,
       });
@@ -309,63 +336,76 @@ export function DashboardProvider({ children }) {
 
   const handleTakeSnapshot = () => {
     if (!liveFrame) return;
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = liveFrame;
-    a.download = `snapshot_${liveDevice?.deviceId || 'live'}_${Date.now()}.jpg`;
+    a.download = `snapshot_${liveDevice?.deviceId || "live"}_${Date.now()}.jpg`;
     a.click();
   };
 
   const handleStartRemoteRecording = (deviceId) => {
     if (socket) {
-      socket.emit('start-remote-recording', { deviceId });
+      socket.emit("start-remote-recording", { deviceId });
     }
   };
 
   const handleStopRemoteRecording = (deviceId) => {
     if (socket) {
-      socket.emit('stop-remote-recording', { deviceId });
+      socket.emit("stop-remote-recording", { deviceId });
     }
   };
 
   // Toggle selection for a recording
   const toggleSelectRecording = (id) => {
     setSelectedRecordings((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
     );
   };
 
   // Toggle select all visible recordings
   const handleSelectAllToggle = (visibleIds = []) => {
-    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedRecordings.includes(id));
+    const allSelected =
+      visibleIds.length > 0 &&
+      visibleIds.every((id) => selectedRecordings.includes(id));
     if (allSelected) {
-      setSelectedRecordings((prev) => prev.filter((id) => !visibleIds.includes(id)));
+      setSelectedRecordings((prev) =>
+        prev.filter((id) => !visibleIds.includes(id)),
+      );
     } else {
-      setSelectedRecordings((prev) => Array.from(new Set([...prev, ...visibleIds])));
+      setSelectedRecordings((prev) =>
+        Array.from(new Set([...prev, ...visibleIds])),
+      );
     }
   };
 
   // Batch delete selected videos
   const handleDeleteSelected = async () => {
     if (selectedRecordings.length === 0) return;
-    if (!window.confirm(`Permanently delete ${selectedRecordings.length} selected recording(s) from Google Drive and server?`)) return;
+    if (
+      !window.confirm(
+        `Permanently delete ${selectedRecordings.length} selected recording(s) from Google Drive and server?`,
+      )
+    )
+      return;
 
     setIsDeleting(true);
     try {
       const res = await fetch(`${API_BASE_URL}/api/videos/batch-delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoIds: selectedRecordings }),
       });
       const data = await res.json();
       if (data.success) {
-        setRecordings((prev) => prev.filter((r) => !selectedRecordings.includes(r._id)));
+        setRecordings((prev) =>
+          prev.filter((r) => !selectedRecordings.includes(r._id)),
+        );
         setSelectedRecordings([]);
         fetchData();
       } else {
-        alert(data.message || 'Batch delete failed');
+        alert(data.message || "Batch delete failed");
       }
     } catch (err) {
-      alert('Delete failed: ' + err.message);
+      alert("Delete failed: " + err.message);
     } finally {
       setIsDeleting(false);
     }
@@ -373,21 +413,28 @@ export function DashboardProvider({ children }) {
 
   // Delete all recordings
   const handleDeleteAllRecordings = async () => {
-    if (!window.confirm('⚠️ WARNING: Delete ALL recordings permanently from Google Drive and Database? This cannot be undone!')) return;
+    if (
+      !window.confirm(
+        "⚠️ WARNING: Delete ALL recordings permanently from Google Drive and Database? This cannot be undone!",
+      )
+    )
+      return;
 
     setIsDeleting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/videos/all`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/videos/all`, {
+        method: "DELETE",
+      });
       const data = await res.json();
       if (data.success) {
         setRecordings([]);
         setSelectedRecordings([]);
         fetchData();
       } else {
-        alert(data.message || 'Delete all failed');
+        alert(data.message || "Delete all failed");
       }
     } catch (err) {
-      alert('Delete all failed: ' + err.message);
+      alert("Delete all failed: " + err.message);
     } finally {
       setIsDeleting(false);
     }
@@ -395,54 +442,63 @@ export function DashboardProvider({ children }) {
 
   // Delete single recording
   const handleDeleteRecording = async (id) => {
-    if (!window.confirm('Permanently delete this recording from Google Drive and database?')) return;
+    if (
+      !window.confirm(
+        "Permanently delete this recording from Google Drive and database?",
+      )
+    )
+      return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/videos/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/videos/${id}`, {
+        method: "DELETE",
+      });
       if (res.ok) {
         setRecordings((prev) => prev.filter((r) => r._id !== id));
         setSelectedRecordings((prev) => prev.filter((item) => item !== id));
         fetchData();
       }
     } catch (err) {
-      alert('Delete failed: ' + err.message);
+      alert("Delete failed: " + err.message);
     }
   };
 
   // Delete device
   const handleDeleteDevice = async (deviceId) => {
-    if (!window.confirm('Remove this device from the dashboard?')) return;
+    if (!window.confirm("Remove this device from the dashboard?")) return;
     try {
-      const res = await fetch(`${API_BASE_URL}/api/devices/${deviceId}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/devices/${deviceId}`, {
+        method: "DELETE",
+      });
       if (res.ok) {
         setDevices((prev) => prev.filter((d) => d.deviceId !== deviceId));
         fetchData();
       }
     } catch (err) {
-      alert('Delete failed: ' + err.message);
+      alert("Delete failed: " + err.message);
     }
   };
 
   // Format bytes to MB
   const formatSize = (bytes) => {
-    if (!bytes) return '0 MB';
+    if (!bytes) return "0 MB";
     const mb = bytes / (1024 * 1024);
-    if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
-    return mb.toFixed(1) + ' MB';
+    if (mb >= 1024) return (mb / 1024).toFixed(2) + " GB";
+    return mb.toFixed(1) + " MB";
   };
 
   // Format duration in mm:ss
   const formatDuration = (seconds) => {
-    if (!seconds) return 'N/A';
+    if (!seconds) return "N/A";
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}m ${secs.toString().padStart(2, '0')}s`;
+    return `${mins}m ${secs.toString().padStart(2, "0")}s`;
   };
 
   // Format time ago
   const formatTimeAgo = (dateString) => {
-    if (!dateString) return 'Never';
+    if (!dateString) return "Never";
     const diff = (new Date() - new Date(dateString)) / 1000;
-    if (diff < 30) return 'Just now';
+    if (diff < 30) return "Just now";
     if (diff < 60) return `${Math.floor(diff)}s ago`;
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -450,7 +506,9 @@ export function DashboardProvider({ children }) {
   };
 
   const liveOnlineCount = devices.filter(
-    (d) => onlineSocketDevices.has(d.deviceId) || (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60)
+    (d) =>
+      onlineSocketDevices.has(d.deviceId) ||
+      (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60),
   ).length;
 
   return (
@@ -506,7 +564,7 @@ export function DashboardProvider({ children }) {
 export function useDashboard() {
   const context = useContext(DashboardContext);
   if (!context) {
-    throw new Error('useDashboard must be used within a DashboardProvider');
+    throw new Error("useDashboard must be used within a DashboardProvider");
   }
   return context;
 }
