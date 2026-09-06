@@ -62,7 +62,11 @@ export default function Layout() {
   const getPageMeta = () => {
     switch (location.pathname) {
       case '/devices':
-        return { title: 'Connected Devices', desc: 'Real-time telemetry, battery, and recording status.', badge: `${devices.length} Active` };
+        return {
+          title: 'Connected Devices',
+          desc: 'Real-time telemetry, battery, and recording status.',
+          badge: liveOnlineCount > 0 ? `${liveOnlineCount} Online` : `${devices.length} Registered`,
+        };
       case '/recordings':
         return { title: 'Surveillance Gallery', desc: 'Browse and stream 720p recordings stored in Drive.', badge: `${recordings.length} Videos` };
       case '/settings':
