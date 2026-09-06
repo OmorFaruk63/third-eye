@@ -44,6 +44,8 @@ export default function App() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRecordings, setSelectedRecordings] = useState([]);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Fetch all dashboard data
   const fetchData = async () => {
@@ -99,17 +101,89 @@ export default function App() {
     return () => clearInterval(interval);
   }, [autoRefresh]);
 
-  // Delete recording
+  // Toggle selection for a recording
+  const toggleSelectRecording = (id) => {
+    setSelectedRecordings((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  // Toggle select all visible recordings
+  const handleSelectAllToggle = () => {
+    const visibleIds = filteredRecordings.map((r) => r._id);
+    const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedRecordings.includes(id));
+    if (allSelected) {
+      setSelectedRecordings((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedRecordings((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  // Delete single recording
   const handleDeleteRecording = async (id) => {
     if (!window.confirm('Are you sure you want to delete this recording?')) return;
     try {
       const res = await fetch(`${API_BASE_URL}/api/videos/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setRecordings((prev) => prev.filter((r) => r._id !== id));
+        setSelectedRecordings((prev) => prev.filter((item) => item !== id));
         fetchData();
       }
     } catch (err) {
       alert('Delete failed: ' + err.message);
+    }
+  };
+
+  // Delete selected recordings in batch
+  const handleDeleteSelected = async () => {
+    if (selectedRecordings.length === 0) return;
+    const confirmMsg = `Are you sure you want to permanently delete ${selectedRecordings.length} selected video(s)? This will also remove them from Google Drive.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/videos/batch-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedRecordings }),
+      });
+
+      if (res.ok) {
+        setRecordings((prev) => prev.filter((r) => !selectedRecordings.includes(r._id)));
+        setSelectedRecordings([]);
+        fetchData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(`Delete failed: ${data.error || 'Server error'}`);
+      }
+    } catch (err) {
+      alert('Delete failed: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Delete ALL recordings
+  const handleDeleteAllRecordings = async () => {
+    if (recordings.length === 0) return;
+    const confirmMsg = `⚠️ WARNING: Are you sure you want to permanently delete ALL ${recordings.length} recordings?\n\nThis will remove every video from both Google Drive and database. This action cannot be undone!`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/videos/all`, { method: 'DELETE' });
+      if (res.ok) {
+        setRecordings([]);
+        setSelectedRecordings([]);
+        fetchData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(`Delete all failed: ${data.error || 'Server error'}`);
+      }
+    } catch (err) {
+      alert('Delete all failed: ' + err.message);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -727,6 +801,59 @@ export default function App() {
                 />
               </div>
 
+              {/* Batch Action Toolbar */}
+              <div className="gallery-toolbar">
+                <div className="gallery-toolbar-left">
+                  <label className="select-all-toggle">
+                    <input
+                      type="checkbox"
+                      checked={
+                        filteredRecordings.length > 0 &&
+                        filteredRecordings.every((r) => selectedRecordings.includes(r._id))
+                      }
+                      onChange={handleSelectAllToggle}
+                      disabled={filteredRecordings.length === 0}
+                    />
+                    <span>
+                      {selectedRecordings.length > 0
+                        ? `${selectedRecordings.length} of ${filteredRecordings.length} Selected`
+                        : `Select All (${filteredRecordings.length})`}
+                    </span>
+                  </label>
+                  {selectedRecordings.length > 0 && (
+                    <button
+                      className="btn-toolbar-ghost"
+                      onClick={() => setSelectedRecordings([])}
+                    >
+                      Clear Selection
+                    </button>
+                  )}
+                </div>
+
+                <div className="gallery-toolbar-right">
+                  {selectedRecordings.length > 0 && (
+                    <button
+                      className="btn-toolbar-danger"
+                      onClick={handleDeleteSelected}
+                      disabled={isDeleting}
+                    >
+                      <Trash2 size={14} />
+                      <span>{isDeleting ? 'Deleting...' : `Delete Selected (${selectedRecordings.length})`}</span>
+                    </button>
+                  )}
+
+                  <button
+                    className="btn-toolbar-danger-outline"
+                    onClick={handleDeleteAllRecordings}
+                    disabled={isDeleting || recordings.length === 0}
+                    title="Permanently delete all videos from Google Drive and database"
+                  >
+                    <Trash2 size={14} />
+                    <span>Delete All</span>
+                  </button>
+                </div>
+              </div>
+
               {filteredRecordings.length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-state-icon">
@@ -737,18 +864,37 @@ export default function App() {
                 </div>
               ) : (
                 <div className="videos-grid">
-                  {filteredRecordings.map((rec) => (
-                    <div key={rec._id} className="video-card">
-                      <div
-                        className="video-preview"
-                        onClick={() => setSelectedVideo(rec)}
-                      >
-                        <div className="play-overlay">
-                          <div className="play-button-icon">
-                            <Play size={24} fill="#000" />
+                  {filteredRecordings.map((rec) => {
+                    const isSelected = selectedRecordings.includes(rec._id);
+                    return (
+                      <div key={rec._id} className={`video-card ${isSelected ? 'selected' : ''}`}>
+                        <div
+                          className="video-preview"
+                          onClick={() => setSelectedVideo(rec)}
+                        >
+                          {/* Selection Checkbox Badge */}
+                          <div
+                            className={`card-select-badge ${isSelected ? 'checked' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleSelectRecording(rec._id);
+                            }}
+                            title={isSelected ? 'Deselect video' : 'Select video'}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              style={{ cursor: 'pointer', pointerEvents: 'none' }}
+                            />
+                          </div>
+
+                          <div className="play-overlay">
+                            <div className="play-button-icon">
+                              <Play size={24} fill="#000" />
+                            </div>
                           </div>
                         </div>
-                      </div>
 
                       <div className="video-card-body">
                         <div className="video-meta-top">
@@ -837,7 +983,8 @@ export default function App() {
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -169,7 +169,95 @@ router.get('/download/:id', async (req, res) => {
   }
 });
 
-// Admin: Delete recording
+// Admin: Delete ALL recordings
+router.delete('/all', async (req, res) => {
+  try {
+    const recordings = await Recording.find();
+
+    // Delete all from Google Drive
+    await Promise.allSettled(
+      recordings.map(async (rec) => {
+        if (rec.driveFileId) {
+          try {
+            await googleDriveService.deleteVideoFile(rec.driveFileId);
+          } catch (e) {
+            console.error('Failed to delete Google Drive file:', rec.driveFileId, e.message);
+          }
+        }
+        if (rec.localFilePath) {
+          const filePath = path.join(uploadsDir, rec.localFilePath);
+          if (fs.existsSync(filePath)) {
+            try { fs.unlinkSync(filePath); } catch (e) {}
+          }
+        }
+      })
+    );
+
+    const result = await Recording.deleteMany({});
+    await Device.updateMany({}, { totalRecordings: 0 });
+
+    res.json({
+      success: true,
+      message: `Deleted all ${result.deletedCount} recordings successfully`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error('Delete all error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin: Batch delete multiple recordings by IDs
+router.post('/batch-delete', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    const recordings = await Recording.find({ _id: { $in: ids } });
+
+    await Promise.allSettled(
+      recordings.map(async (rec) => {
+        if (rec.driveFileId) {
+          try {
+            await googleDriveService.deleteVideoFile(rec.driveFileId);
+          } catch (e) {
+            console.error('Failed to delete Google Drive file:', rec.driveFileId, e.message);
+          }
+        }
+        if (rec.localFilePath) {
+          const filePath = path.join(uploadsDir, rec.localFilePath);
+          if (fs.existsSync(filePath)) {
+            try { fs.unlinkSync(filePath); } catch (e) {}
+          }
+        }
+      })
+    );
+
+    const result = await Recording.deleteMany({ _id: { $in: ids } });
+
+    for (const rec of recordings) {
+      if (rec.deviceId) {
+        await Device.updateOne(
+          { deviceId: rec.deviceId, totalRecordings: { $gt: 0 } },
+          { $inc: { totalRecordings: -1 } }
+        ).catch(() => {});
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully deleted ${result.deletedCount} recordings`,
+      deletedCount: result.deletedCount,
+    });
+  } catch (error) {
+    console.error('Batch delete error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin: Delete single recording
 router.delete('/:id', async (req, res) => {
   try {
     const recording = await Recording.findById(req.params.id);
@@ -188,6 +276,13 @@ router.delete('/:id', async (req, res) => {
       if (fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
+    }
+
+    if (recording.deviceId) {
+      await Device.updateOne(
+        { deviceId: recording.deviceId, totalRecordings: { $gt: 0 } },
+        { $inc: { totalRecordings: -1 } }
+      ).catch(() => {});
     }
 
     await Recording.findByIdAndDelete(req.params.id);
