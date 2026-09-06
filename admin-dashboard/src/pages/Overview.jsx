@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Smartphone,
@@ -10,9 +10,25 @@ import {
   MapPin,
   BatteryCharging,
   BatteryLow,
-  Clock,
+  Check,
+  Copy,
+  ArrowUpRight,
 } from 'lucide-react';
 import { useDashboard } from '../context/DashboardContext';
+
+import Box from '@mui/material/Box';
+import Grid from '@mui/material/Grid';
+import Card from '@mui/material/Card';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import LinearProgress from '@mui/material/LinearProgress';
 
 export default function Overview() {
   const {
@@ -27,306 +43,649 @@ export default function Overview() {
     formatTimeAgo,
   } = useDashboard();
 
+  const [copiedId, setCopiedId] = useState(null);
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(text);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Helper to format friendly video label from timestamp or filename
+  const formatVideoTitle = (rec) => {
+    if (rec.uploadedAt) {
+      const d = new Date(rec.uploadedAt);
+      return `REC_${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}_${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    }
+    return rec.fileName.replace(/\.mp4$/i, '');
+  };
+
+  // Calculate Google Drive 15GB percentage
+  const totalFreeQuotaMB = 15 * 1024;
+  const usedMB = stats.storageUsedMB || (stats.storageUsedGB ? stats.storageUsedGB * 1024 : 0);
+  const quotaPercent = Math.min(100, Math.max(1, parseFloat(((usedMB / totalFreeQuotaMB) * 100).toFixed(1))));
+
   return (
-    <div className="space-y-8">
-      {/* 4-Card Statistics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
-        {/* Total Devices */}
-        <div className="p-5 rounded-2xl bg-[#101725]/80 border border-white/10 backdrop-blur-md hover:border-cyan-400/40 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total Devices</span>
-            <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-[#00e5ff]">
-              <Smartphone size={18} />
-            </div>
-          </div>
-          <div className="text-2xl md:text-3xl font-bold text-white tracking-tight">{stats.totalDevices}</div>
-          <div className="text-xs text-gray-400 mt-2 flex items-center gap-1.5">
-            <span className="text-emerald-400 font-bold">{liveOnlineCount} active</span>
-            <span>connected now</span>
-          </div>
-        </div>
+    <Box sx={{ maxWidth: 1280, mx: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {/* 4-Card Cyber Statistics Grid */}
+      <Grid container spacing={{ xs: 1.5, md: 2.5 }}>
+        {/* Card 1: Total Devices */}
+        <Grid size={{ xs: 6, lg: 3 }}>
+          <Card sx={{
+            p: 2.5, position: 'relative', overflow: 'hidden',
+            '&:hover': { borderColor: 'rgba(0,229,255,0.4)', transform: 'translateY(-2px)' },
+            transition: 'all 0.25s ease',
+          }}>
+            <Box sx={{
+              position: 'absolute', top: 0, left: 24, right: 24, height: '2px',
+              background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.6), transparent)',
+            }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, letterSpacing: '0.08em', color: 'text.secondary', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace' }}>
+                Total Devices
+              </Typography>
+              <Box sx={{
+                width: 40, height: 40, borderRadius: '12px',
+                background: 'rgba(0,229,255,0.12)', border: '1px solid rgba(0,229,255,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff',
+                boxShadow: '0 0 15px rgba(0,229,255,0.2)',
+              }}>
+                <Smartphone size={20} />
+              </Box>
+            </Box>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: '#fff', fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.1 }}>
+              {stats.totalDevices}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }}>
+              <Chip
+                size="small"
+                label={`${liveOnlineCount} Active`}
+                sx={{
+                  height: 22, px: 0.5,
+                  background: 'rgba(0,230,118,0.12)', border: '1px solid rgba(0,230,118,0.3)',
+                  color: '#00e676', fontWeight: 700,
+                  '& .MuiChip-label': { px: 1 },
+                }}
+              />
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                connected relay
+              </Typography>
+            </Box>
+          </Card>
+        </Grid>
 
-        {/* Recording Live */}
-        <div className="p-5 rounded-2xl bg-[#101725]/80 border border-white/10 backdrop-blur-md hover:border-red-500/40 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Recording Live</span>
-            <div className="w-9 h-9 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400">
-              <Radio size={18} />
-            </div>
-          </div>
-          <div className={`text-2xl md:text-3xl font-bold tracking-tight ${stats.recordingNow > 0 ? 'text-red-400 animate-pulse' : 'text-white'}`}>
-            {stats.recordingNow}
-          </div>
-          <div className="text-xs text-gray-400 mt-2">
-            {stats.recordingNow > 0 ? 'Active stealth recording in progress' : 'Standby mode'}
-          </div>
-        </div>
+        {/* Card 2: Recording Live */}
+        <Grid size={{ xs: 6, lg: 3 }}>
+          <Card sx={{
+            p: 2.5, position: 'relative', overflow: 'hidden',
+            '&:hover': { borderColor: stats.recordingNow > 0 ? 'rgba(255,23,68,0.5)' : 'rgba(255,255,255,0.2)', transform: 'translateY(-2px)' },
+            transition: 'all 0.25s ease',
+          }}>
+            <Box sx={{
+              position: 'absolute', top: 0, left: 24, right: 24, height: '2px',
+              background: stats.recordingNow > 0 ? 'linear-gradient(90deg, transparent, rgba(255,23,68,0.7), transparent)' : 'transparent',
+            }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, letterSpacing: '0.08em', color: 'text.secondary', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace' }}>
+                Recording Live
+              </Typography>
+              <Box sx={{
+                width: 40, height: 40, borderRadius: '12px',
+                background: stats.recordingNow > 0 ? 'rgba(255,23,68,0.18)' : 'rgba(255,255,255,0.04)',
+                border: stats.recordingNow > 0 ? '1px solid rgba(255,23,68,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: stats.recordingNow > 0 ? '#ff1744' : 'text.secondary',
+                boxShadow: stats.recordingNow > 0 ? '0 0 16px rgba(255,23,68,0.3)' : 'none',
+              }}>
+                <Radio size={20} />
+              </Box>
+            </Box>
+            <Typography variant="h4" sx={{
+              fontWeight: 700,
+              color: stats.recordingNow > 0 ? '#ff1744' : '#fff',
+              fontFamily: '"JetBrains Mono", monospace',
+              lineHeight: 1.1,
+            }}>
+              {stats.recordingNow}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }}>
+              {stats.recordingNow > 0 ? (
+                <Chip
+                  size="small"
+                  label="Surveillance Active"
+                  sx={{
+                    height: 22, px: 0.5,
+                    background: 'rgba(255,23,68,0.15)', border: '1px solid rgba(255,23,68,0.4)',
+                    color: '#ff5252', fontWeight: 700,
+                  }}
+                />
+              ) : (
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                  Standby mode
+                </Typography>
+              )}
+            </Box>
+          </Card>
+        </Grid>
 
-        {/* Total Videos */}
-        <div className="p-5 rounded-2xl bg-[#101725]/80 border border-white/10 backdrop-blur-md hover:border-emerald-400/40 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Total Videos</span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-[#00e676]">
-              <Video size={18} />
-            </div>
-          </div>
-          <div className="text-2xl md:text-3xl font-bold text-white tracking-tight">{stats.totalRecordings}</div>
-          <div className="text-xs text-gray-400 mt-2">Captured &amp; preserved</div>
-        </div>
+        {/* Card 3: Total Archive Videos */}
+        <Grid size={{ xs: 6, lg: 3 }}>
+          <Card sx={{
+            p: 2.5, position: 'relative', overflow: 'hidden',
+            '&:hover': { borderColor: 'rgba(0,230,118,0.4)', transform: 'translateY(-2px)' },
+            transition: 'all 0.25s ease',
+          }}>
+            <Box sx={{
+              position: 'absolute', top: 0, left: 24, right: 24, height: '2px',
+              background: 'linear-gradient(90deg, transparent, rgba(0,230,118,0.6), transparent)',
+            }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, letterSpacing: '0.08em', color: 'text.secondary', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace' }}>
+                Archive Vault
+              </Typography>
+              <Box sx={{
+                width: 40, height: 40, borderRadius: '12px',
+                background: 'rgba(0,230,118,0.12)', border: '1px solid rgba(0,230,118,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e676',
+                boxShadow: '0 0 15px rgba(0,230,118,0.2)',
+              }}>
+                <Video size={20} />
+              </Box>
+            </Box>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: '#fff', fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.1 }}>
+              {stats.totalRecordings}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1.5 }}>
+              <Chip
+                size="small"
+                label="100% Synced"
+                sx={{
+                  height: 22, px: 0.5,
+                  background: 'rgba(0,230,118,0.12)', border: '1px solid rgba(0,230,118,0.3)',
+                  color: '#00e676', fontWeight: 700,
+                }}
+              />
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+                to Google Drive
+              </Typography>
+            </Box>
+          </Card>
+        </Grid>
 
-        {/* Total Cloud Storage */}
-        <div className="p-5 rounded-2xl bg-[#101725]/80 border border-white/10 backdrop-blur-md hover:border-amber-400/40 transition-all">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-400">Google Drive Storage</span>
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-400">
-              <HardDrive size={18} />
-            </div>
-          </div>
-          <div className="text-2xl md:text-3xl font-bold text-white tracking-tight">
-            {stats.storageUsedGB >= 1
-              ? `${stats.storageUsedGB} GB`
-              : `${stats.storageUsedMB || 0} MB`}
-          </div>
-          <div className="text-xs text-gray-400 mt-2">Direct cloud preserved</div>
-        </div>
-      </div>
+        {/* Card 4: Google Drive Storage */}
+        <Grid size={{ xs: 6, lg: 3 }}>
+          <Card sx={{
+            p: 2.5, position: 'relative', overflow: 'hidden',
+            '&:hover': { borderColor: 'rgba(245,158,11,0.4)', transform: 'translateY(-2px)' },
+            transition: 'all 0.25s ease',
+          }}>
+            <Box sx={{
+              position: 'absolute', top: 0, left: 24, right: 24, height: '2px',
+              background: 'linear-gradient(90deg, transparent, rgba(245,158,11,0.6), transparent)',
+            }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+              <Typography variant="caption" sx={{ fontWeight: 700, letterSpacing: '0.08em', color: 'text.secondary', textTransform: 'uppercase', fontFamily: '"JetBrains Mono", monospace' }}>
+                Drive Quota
+              </Typography>
+              <Box sx={{
+                width: 40, height: 40, borderRadius: '12px',
+                background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f59e0b',
+                boxShadow: '0 0 15px rgba(245,158,11,0.2)',
+              }}>
+                <HardDrive size={20} />
+              </Box>
+            </Box>
+            <Typography variant="h4" sx={{ fontWeight: 700, color: '#fff', fontFamily: '"JetBrains Mono", monospace', lineHeight: 1.1 }}>
+              {stats.storageUsedGB >= 1 ? `${stats.storageUsedGB} GB` : `${stats.storageUsedMB || 0} MB`}
+            </Typography>
+            <Box sx={{ mt: 1.5 }}>
+              <LinearProgress
+                variant="determinate"
+                value={quotaPercent}
+                sx={{
+                  height: 6, borderRadius: 3,
+                  backgroundColor: 'rgba(255,255,255,0.08)',
+                  '& .MuiLinearProgress-bar': {
+                    backgroundColor: '#f59e0b',
+                    borderRadius: 3,
+                  },
+                }}
+              />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.8, fontSize: '0.7rem', color: 'text.secondary', fontFamily: '"JetBrains Mono", monospace' }}>
+                <span>{quotaPercent}% of 15GB free</span>
+                <span style={{ color: '#00e676', fontWeight: 600 }}>0 MB Server</span>
+              </Box>
+            </Box>
+          </Card>
+        </Grid>
+      </Grid>
 
-      {/* Recent Surveillance Videos Preview */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Video size={20} className="text-cyan-400" />
-              <span>Recent Surveillance Recordings</span>
-            </h2>
-            <p className="text-xs text-gray-400">Latest recordings uploaded from user phones</p>
-          </div>
-          <Link
+      {/* Surveillance Feed Preview Section */}
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Video size={20} color="#00e5ff" />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff', fontSize: '1.1rem' }}>
+                Surveillance Video Vault
+              </Typography>
+            </Box>
+            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.2 }}>
+              Captured stealth recordings automatically uploaded from connected devices
+            </Typography>
+          </Box>
+          <Button
+            component={Link}
             to="/recordings"
-            className="text-xs font-semibold text-[#00e5ff] hover:text-cyan-300 hover:underline flex items-center gap-1"
+            variant="outlined"
+            size="small"
+            endIcon={<ArrowUpRight size={14} />}
+            sx={{
+              borderColor: 'rgba(255,255,255,0.1)',
+              color: '#00e5ff',
+              '&:hover': { borderColor: 'rgba(0,229,255,0.4)', background: 'rgba(0,229,255,0.06)' },
+            }}
           >
-            <span>View All ({recordings.length})</span>
-            <span>&rarr;</span>
-          </Link>
-        </div>
+            View All ({recordings.length})
+          </Button>
+        </Box>
 
         {recordings.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-[#101725]/50 border border-white/10 text-center">
-            <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 mx-auto mb-3">
-              <Video size={22} />
-            </div>
-            <h3 className="text-sm font-semibold text-white">No recordings captured yet</h3>
-            <p className="text-xs text-gray-400 mt-1">
-              Videos will appear here automatically when recording sessions finish on phones.
-            </p>
-          </div>
+          <Card sx={{ p: 6, textAlign: 'center', background: 'rgba(16,23,38,0.6)' }}>
+            <Box sx={{
+              width: 56, height: 56, borderRadius: '16px',
+              background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.2)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff',
+              mx: 'auto', mb: 2,
+            }}>
+              <Video size={28} />
+            </Box>
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#fff' }}>
+              No video recordings captured yet
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5, maxWidth: 380, mx: 'auto' }}>
+              When recordings conclude on client phones, video files will stream directly to this vault.
+            </Typography>
+          </Card>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <Grid container spacing={2.5}>
             {recordings.slice(0, 3).map((rec) => (
-              <div
-                key={rec._id}
-                className="group rounded-2xl bg-[#101725]/80 border border-white/10 overflow-hidden hover:border-cyan-400/40 transition-all flex flex-col"
-              >
-                <div
-                  onClick={() => setSelectedVideo(rec)}
-                  className="relative aspect-video bg-black/60 flex items-center justify-center cursor-pointer group-hover:opacity-95 transition-opacity"
-                >
-                  <div className="w-11 h-11 rounded-full bg-cyan-400/90 text-black flex items-center justify-center shadow-lg shadow-cyan-400/40 group-hover:scale-110 transition-transform">
-                    <Play size={20} fill="#000" />
-                  </div>
-                  <div className="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-black/70 border border-white/15 text-[10px] font-mono text-white">
-                    {rec.quality || '720p'}
-                  </div>
-                  <div className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded bg-black/70 border border-white/15 text-[10px] font-mono text-cyan-300">
-                    {formatSize(rec.fileSizeBytes)}
-                  </div>
-                </div>
+              <Grid size={{ xs: 12, sm: 6, lg: 4 }} key={rec._id}>
+                <Card sx={{
+                  display: 'flex', flexDirection: 'column', height: '100%',
+                  overflow: 'hidden', position: 'relative',
+                  '&:hover': { borderColor: 'rgba(0,229,255,0.4)', transform: 'translateY(-2px)' },
+                  transition: 'all 0.25s ease',
+                }}>
+                  {/* CCTV Style Viewport Preview */}
+                  <Box
+                    onClick={() => setSelectedVideo(rec)}
+                    className="cctv-viewport"
+                    sx={{
+                      aspectRatio: '16/9', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', position: 'relative', userSelect: 'none',
+                    }}
+                  >
+                    {/* CCTV Corner Brackets */}
+                    <div className="cctv-bracket-tl" />
+                    <div className="cctv-bracket-tr" />
+                    <div className="cctv-bracket-bl" />
+                    <div className="cctv-bracket-br" />
+                    <div className="cctv-crosshair" />
 
-                <div className="p-4 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h4 className="text-sm font-semibold text-white truncate mb-2">{rec.fileName}</h4>
-                    <div className="space-y-1 text-xs text-gray-400">
-                      <div className="flex items-center gap-1.5">
-                        <Smartphone size={12} className="text-cyan-400" />
-                        <span className="truncate">{rec.deviceName || 'Android'} ({rec.deviceId})</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Clock size={12} className="text-emerald-400" />
-                        <span>{formatTimeAgo(rec.uploadedAt)}</span>
-                      </div>
-                    </div>
-                  </div>
+                    {/* Play Button Icon */}
+                    <Box sx={{
+                      width: 48, height: 48, borderRadius: '50%',
+                      background: '#00e5ff', color: '#000',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      boxShadow: '0 0 20px rgba(0,229,255,0.5)',
+                      zIndex: 4,
+                      transition: 'transform 0.2s ease',
+                      '&:hover': { transform: 'scale(1.1)' },
+                    }}>
+                      <Play size={22} fill="#000" style={{ marginLeft: 2 }} />
+                    </Box>
 
-                  <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between">
-                    <button
-                      onClick={() => setSelectedVideo(rec)}
-                      className="flex items-center gap-1 text-xs font-semibold text-[#00e5ff] hover:underline"
-                    >
-                      <Play size={12} /> Play
-                    </button>
-                    {rec.driveViewLink && (
-                      <a
-                        href={rec.driveViewLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center gap-1 text-xs font-semibold text-emerald-400 hover:underline"
+                    {/* CCTV Telemetry Badges */}
+                    <Box sx={{
+                      position: 'absolute', top: 10, left: 10, zIndex: 5,
+                      px: 1, py: 0.3, borderRadius: 1,
+                      background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)',
+                      fontSize: '0.625rem', fontFamily: '"JetBrains Mono", monospace', color: '#cbd5e1',
+                      display: 'flex', alignItems: 'center', gap: 0.8,
+                    }}>
+                      <Box sx={{ width: 6, height: 6, borderRadius: '50%', background: '#00e5ff' }} />
+                      <span>{rec.quality || '720p HD'}</span>
+                    </Box>
+
+                    <Box sx={{
+                      position: 'absolute', top: 10, right: 10, zIndex: 5,
+                      px: 1, py: 0.3, borderRadius: 1,
+                      background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)',
+                      fontSize: '0.625rem', fontFamily: '"JetBrains Mono", monospace',
+                      color: '#00e5ff', fontWeight: 600,
+                    }}>
+                      {formatSize(rec.fileSizeBytes)}
+                    </Box>
+
+                    <Box sx={{
+                      position: 'absolute', bottom: 10, left: 10, zIndex: 5,
+                      px: 1, py: 0.3, borderRadius: 1,
+                      background: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,255,255,0.15)',
+                      fontSize: '0.625rem', fontFamily: '"JetBrains Mono", monospace', color: '#94a3b8',
+                    }}>
+                      {rec.deviceName || 'Client Device'}
+                    </Box>
+                  </Box>
+
+                  {/* Card Meta Content */}
+                  <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', flexGrow: 1, justifyContent: 'space-between' }}>
+                    <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 1 }}>
+                        <Typography variant="body2" sx={{
+                          fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          '&:hover': { color: '#00e5ff' }, cursor: 'pointer',
+                        }} onClick={() => setSelectedVideo(rec)} title={rec.fileName}>
+                          {formatVideoTitle(rec)}
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', color: 'text.secondary', flexShrink: 0 }}>
+                          {formatTimeAgo(rec.uploadedAt)}
+                        </Typography>
+                      </Box>
+
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.8, fontSize: '0.75rem', color: 'text.secondary' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Smartphone size={14} color="#00e5ff" style={{ flexShrink: 0 }} />
+                          <Typography variant="caption" sx={{ color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {rec.deviceName || 'Android'} &bull; <span style={{ fontFamily: 'monospace', color: '#64748b' }}>{rec.deviceId}</span>
+                          </Typography>
+                        </Box>
+
+                        {rec.latitude && rec.longitude && (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <a
+                              href={`https://www.google.com/maps?q=${rec.latitude},${rec.longitude}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#00e5ff', textDecoration: 'none' }}
+                            >
+                              <MapPin size={13} style={{ flexShrink: 0 }} />
+                              <Typography variant="caption" sx={{ color: '#00e5ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {rec.locationName || `${rec.latitude.toFixed(2)}, ${rec.longitude.toFixed(2)}`}
+                              </Typography>
+                            </a>
+                          </Box>
+                        )}
+                      </Box>
+                    </Box>
+
+                    {/* Actions Bar */}
+                    <Box sx={{ mt: 2, pt: 1.5, borderTop: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<Play size={12} fill="currentColor" />}
+                        onClick={() => setSelectedVideo(rec)}
+                        sx={{
+                          fontSize: '0.75rem', py: 0.4, px: 1.5,
+                          borderColor: 'rgba(0,229,255,0.3)', color: '#00e5ff',
+                          background: 'rgba(0,229,255,0.08)',
+                          '&:hover': { background: 'rgba(0,229,255,0.18)', borderColor: '#00e5ff' },
+                        }}
                       >
-                        <ExternalLink size={12} /> Drive
-                      </a>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+                        Stream
+                      </Button>
 
-      {/* Connected Devices Quick Overview Table */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Smartphone size={20} className="text-emerald-400" />
-              <span>Active Connected Devices</span>
-            </h2>
-            <p className="text-xs text-gray-400">Real-time status and live camera surveillance triggers</p>
-          </div>
-          <Link
+                      {rec.driveViewLink ? (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          component="a"
+                          href={rec.driveViewLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          startIcon={<ExternalLink size={12} />}
+                          sx={{
+                            fontSize: '0.75rem', py: 0.4, px: 1.5,
+                            borderColor: 'rgba(0,230,118,0.3)', color: '#00e676',
+                            background: 'rgba(0,230,118,0.08)',
+                            '&:hover': { background: 'rgba(0,230,118,0.18)', borderColor: '#00e676' },
+                          }}
+                        >
+                          Google Drive
+                        </Button>
+                      ) : (
+                        <Typography variant="caption" sx={{ fontFamily: '"JetBrains Mono", monospace', color: '#64748b' }}>
+                          Local Cache
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        )}
+      </Box>
+
+      {/* Connected Devices Telemetry Table */}
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Smartphone size={20} color="#00e676" />
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#fff', fontSize: '1.1rem' }}>
+                Active Telemetry Fleet
+              </Typography>
+            </Box>
+            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.2 }}>
+              Real-time status, battery telemetry, and silent live camera trigger
+            </Typography>
+          </Box>
+          <Button
+            component={Link}
             to="/devices"
-            className="text-xs font-semibold text-[#00e5ff] hover:text-cyan-300 hover:underline flex items-center gap-1"
+            variant="outlined"
+            size="small"
+            endIcon={<ArrowUpRight size={14} />}
+            sx={{
+              borderColor: 'rgba(255,255,255,0.1)',
+              color: '#00e5ff',
+              '&:hover': { borderColor: 'rgba(0,229,255,0.4)', background: 'rgba(0,229,255,0.06)' },
+            }}
           >
-            <span>Manage All ({devices.length})</span>
-            <span>&rarr;</span>
-          </Link>
-        </div>
+            Manage Fleet ({devices.length})
+          </Button>
+        </Box>
 
         {devices.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-[#101725]/50 border border-white/10 text-center">
-            <Smartphone size={28} className="text-gray-500 mx-auto mb-2" />
-            <h3 className="text-sm font-semibold text-white">No devices connected</h3>
-            <p className="text-xs text-gray-400 mt-1">
-              Devices running Third Eye will automatically register on first start.
-            </p>
-          </div>
+          <Card sx={{ p: 6, textAlign: 'center', background: 'rgba(16,23,38,0.6)' }}>
+            <Smartphone size={32} color="#64748b" style={{ margin: '0 auto 12px' }} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#fff' }}>
+              No active devices registered
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5, maxWidth: 380, mx: 'auto' }}>
+              Devices will appear here immediately upon launching the Third Eye client.
+            </Typography>
+          </Card>
         ) : (
-          <div className="rounded-2xl bg-[#101725]/80 border border-white/10 overflow-hidden backdrop-blur-md">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-[#07090e]/80 border-b border-white/10 text-xs font-mono uppercase text-gray-400">
-                  <tr>
-                    <th className="px-5 py-3.5">Device</th>
-                    <th className="px-5 py-3.5">Location</th>
-                    <th className="px-5 py-3.5">Battery</th>
-                    <th className="px-5 py-3.5">Resolution</th>
-                    <th className="px-5 py-3.5">Status</th>
-                    <th className="px-5 py-3.5">Last Active</th>
-                    <th className="px-5 py-3.5">Videos</th>
-                    <th className="px-5 py-3.5 text-right">Live View</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-white/5">
+          <Card sx={{ overflow: 'hidden' }}>
+            <TableContainer>
+              <Table sx={{ minWidth: 700 }} size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Device Unit</TableCell>
+                    <TableCell>ID / Fingerprint</TableCell>
+                    <TableCell>Location</TableCell>
+                    <TableCell>Battery</TableCell>
+                    <TableCell>Resolution</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Last Seen</TableCell>
+                    <TableCell align="right">Surveillance Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {devices.slice(0, 5).map((d) => {
                     const isOnline =
                       onlineSocketDevices.has(d.deviceId) ||
                       (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
 
                     return (
-                      <tr key={d.deviceId} className="hover:bg-white/[0.02] transition-colors">
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-cyan-500/10 border border-cyan-400/25 flex items-center justify-center text-cyan-400 shrink-0">
-                              <Smartphone size={16} />
-                            </div>
-                            <div>
-                              <div className="font-semibold text-white">{d.deviceName || d.model}</div>
-                              <div className="text-xs font-mono text-gray-500">{d.deviceId}</div>
-                            </div>
-                          </div>
-                        </td>
+                      <TableRow key={d.deviceId} hover>
+                        {/* Device Info */}
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Box sx={{
+                              width: 36, height: 36, borderRadius: '10px',
+                              background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.25)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff',
+                              flexShrink: 0,
+                            }}>
+                              <Smartphone size={17} />
+                            </Box>
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: '#fff', '&:hover': { color: '#00e5ff' } }}>
+                                {d.deviceName || d.model}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace', display: 'block' }}>
+                                {d.model || 'Android Device'}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </TableCell>
 
-                        <td className="px-5 py-4">
+                        {/* ID with Copy */}
+                        <TableCell>
+                          <Button
+                            size="small"
+                            onClick={() => copyToClipboard(d.deviceId)}
+                            endIcon={copiedId === d.deviceId ? <Check size={12} color="#00e676" /> : <Copy size={12} />}
+                            sx={{
+                              fontFamily: '"JetBrains Mono", monospace', fontSize: '0.75rem',
+                              color: '#cbd5e1', background: 'rgba(0,0,0,0.4)',
+                              border: '1px solid rgba(255,255,255,0.1)', px: 1, py: 0.2, minWidth: 0,
+                              '&:hover': { borderColor: 'rgba(0,229,255,0.4)', color: '#fff' },
+                            }}
+                          >
+                            {d.deviceId.length > 14 ? `${d.deviceId.substring(0, 14)}...` : d.deviceId}
+                          </Button>
+                        </TableCell>
+
+                        {/* Location */}
+                        <TableCell>
                           {d.latitude && d.longitude ? (
-                            <a
+                            <Button
+                              size="small"
+                              component="a"
                               href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
                               target="_blank"
                               rel="noreferrer"
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-500/10 border border-cyan-400/25 text-[#00e5ff] text-xs font-medium hover:bg-cyan-500/20"
+                              startIcon={<MapPin size={12} />}
+                              sx={{
+                                fontSize: '0.75rem', py: 0.2, px: 1,
+                                background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)',
+                                color: '#00e5ff', minWidth: 0,
+                                '&:hover': { background: 'rgba(0,229,255,0.18)' },
+                              }}
                             >
-                              <MapPin size={12} />
-                              <span>{d.locationName || `${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}`}</span>
-                            </a>
+                              <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {d.locationName || `${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}`}
+                              </span>
+                            </Button>
                           ) : (
-                            <span className="text-xs text-gray-500">{d.ipAddress ? d.ipAddress.split(',')[0] : 'Locating...'}</span>
+                            <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace' }}>
+                              {d.ipAddress ? d.ipAddress.split(',')[0] : 'GPS Standby'}
+                            </Typography>
                           )}
-                        </td>
+                        </TableCell>
 
-                        <td className="px-5 py-4">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
-                              d.batteryLevel > 50
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                                : d.batteryLevel > 20
-                                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-                                : 'bg-red-500/15 text-red-400 border border-red-500/30'
-                            }`}
-                          >
-                            {d.batteryLevel > 50 ? <BatteryCharging size={13} /> : <BatteryLow size={13} />}
-                            <span>{d.batteryLevel}%</span>
-                          </span>
-                        </td>
+                        {/* Battery Level */}
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            icon={d.batteryLevel > 50 ? <BatteryCharging size={13} /> : <BatteryLow size={13} />}
+                            label={`${d.batteryLevel || 0}%`}
+                            sx={{
+                              height: 24,
+                              background: d.batteryLevel > 50 ? 'rgba(0,230,118,0.12)' : d.batteryLevel > 20 ? 'rgba(245,158,11,0.12)' : 'rgba(255,23,68,0.12)',
+                              border: d.batteryLevel > 50 ? '1px solid rgba(0,230,118,0.3)' : d.batteryLevel > 20 ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(255,23,68,0.3)',
+                              color: d.batteryLevel > 50 ? '#00e676' : d.batteryLevel > 20 ? '#f59e0b' : '#ff1744',
+                              fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                              '& .MuiChip-icon': { color: 'inherit' },
+                            }}
+                          />
+                        </TableCell>
 
-                        <td className="px-5 py-4">
-                          <span className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-xs font-mono text-gray-300">
+                        {/* Resolution */}
+                        <TableCell>
+                          <Typography variant="caption" sx={{
+                            px: 1, py: 0.4, borderRadius: 1,
+                            background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.08)',
+                            fontFamily: '"JetBrains Mono", monospace', color: '#cbd5e1',
+                          }}>
                             {d.videoQuality || '720p'}
-                          </span>
-                        </td>
+                          </Typography>
+                        </TableCell>
 
-                        <td className="px-5 py-4">
-                          <span
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                              d.isRecording
-                                ? 'bg-red-500/15 text-red-400 border border-red-500/30 animate-pulse'
-                                : isOnline
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-white/5 text-gray-400 border border-white/10'
-                            }`}
-                          >
-                            {d.isRecording ? 'Recording' : isOnline ? 'Online' : 'Offline'}
-                          </span>
-                        </td>
+                        {/* Status */}
+                        <TableCell>
+                          <Chip
+                            size="small"
+                            label={d.isRecording ? 'Recording' : isOnline ? 'Online' : 'Offline'}
+                            sx={{
+                              height: 24,
+                              background: d.isRecording ? 'rgba(255,23,68,0.15)' : isOnline ? 'rgba(0,230,118,0.12)' : 'rgba(255,255,255,0.04)',
+                              border: d.isRecording ? '1px solid rgba(255,23,68,0.4)' : isOnline ? '1px solid rgba(0,230,118,0.3)' : '1px solid rgba(255,255,255,0.1)',
+                              color: d.isRecording ? '#ff5252' : isOnline ? '#00e676' : '#64748b',
+                              fontFamily: '"JetBrains Mono", monospace', fontWeight: 600,
+                            }}
+                          />
+                        </TableCell>
 
-                        <td className="px-5 py-4">
-                          {isOnline ? (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-400/25 text-emerald-400 text-xs font-semibold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse" />
-                              <span>Active now</span>
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-400">{formatTimeAgo(d.lastSeen)}</span>
-                          )}
-                        </td>
+                        {/* Last Seen */}
+                        <TableCell>
+                          <Typography variant="caption" sx={{
+                            fontFamily: '"JetBrains Mono", monospace',
+                            color: isOnline ? '#00e676' : '#64748b',
+                            fontWeight: isOnline ? 600 : 400,
+                          }}>
+                            {isOnline ? 'Active now' : formatTimeAgo(d.lastSeen)}
+                          </Typography>
+                        </TableCell>
 
-                        <td className="px-5 py-4 font-bold text-white">{d.totalRecordings || 0}</td>
-
-                        <td className="px-5 py-4 text-right">
-                          <button
+                        {/* Action */}
+                        <TableCell align="right">
+                          <Button
+                            size="small"
+                            variant="contained"
                             onClick={() => handleStartLiveStream(d)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 text-xs font-semibold transition-all shadow-[0_0_10px_rgba(239,68,68,0.15)]"
+                            startIcon={<Radio size={13} />}
+                            sx={{
+                              fontSize: '0.75rem', py: 0.5, px: 1.5,
+                              background: 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)',
+                              border: '1px solid rgba(255,23,68,0.4)',
+                              color: '#ff5252',
+                              boxShadow: '0 0 10px rgba(255,23,68,0.2)',
+                              '&:hover': {
+                                background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)',
+                                color: '#fff',
+                                boxShadow: '0 0 16px rgba(255,23,68,0.4)',
+                              },
+                            }}
                           >
-                            <Radio size={12} className="animate-pulse" />
-                            <span>Live Camera</span>
-                          </button>
-                        </td>
-                      </tr>
+                            Watch Live
+                          </Button>
+                        </TableCell>
+                      </TableRow>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Card>
         )}
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 }
