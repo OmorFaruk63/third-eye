@@ -7,6 +7,7 @@ import {
   MapPin,
   BatteryCharging,
   BatteryLow,
+  Battery,
   Search,
   Check,
   Copy,
@@ -285,10 +286,10 @@ export default function Devices() {
                           Battery
                         </Typography>
                         <Typography variant="caption" sx={{
-                          fontWeight: 700, fontFamily: 'monospace',
-                          color: d.batteryLevel > 50 ? '#00e676' : d.batteryLevel > 20 ? '#f59e0b' : '#ff1744',
+                          fontWeight: isOnline ? 700 : 500, fontFamily: 'monospace',
+                          color: !isOnline ? '#94a3b8' : d.batteryLevel > 50 ? '#00e676' : d.batteryLevel > 20 ? '#f59e0b' : '#ff1744',
                         }}>
-                          {d.batteryLevel || 0}%
+                          {d.batteryLevel || 0}%{!isOnline ? ' (Last)' : ''}
                         </Typography>
                       </Box>
 
@@ -327,29 +328,43 @@ export default function Devices() {
                         size="small"
                         variant="contained"
                         fullWidth
+                        disabled={!isOnline}
                         onClick={() => handleStartLiveStream(d)}
                         startIcon={<Radio size={13} />}
                         sx={{
-                          background: 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)',
-                          border: '1px solid rgba(255,23,68,0.4)',
-                          color: '#ff5252',
+                          background: isOnline
+                            ? 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)'
+                            : 'rgba(255,255,255,0.04)',
+                          border: isOnline
+                            ? '1px solid rgba(255,23,68,0.4)'
+                            : '1px solid rgba(255,255,255,0.08)',
+                          color: isOnline ? '#ff5252' : '#64748b',
                           fontSize: '0.75rem',
-                          '&:hover': { background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)', color: '#fff' },
+                          '&:hover': isOnline ? { background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)', color: '#fff' } : {},
+                          '&.Mui-disabled': {
+                            color: '#64748b',
+                            borderColor: 'rgba(255,255,255,0.06)',
+                          },
                         }}
                       >
-                        Watch Live
+                        {isOnline ? 'Watch Live' : 'Offline'}
                       </Button>
                       <Button
                         size="small"
                         variant="outlined"
+                        disabled={!isOnline}
                         onClick={() => d.isRecording ? handleStopRemoteRecording(d.deviceId) : handleStartRemoteRecording(d.deviceId)}
                         startIcon={<Video size={13} />}
                         sx={{
                           fontSize: '0.75rem', py: 0.4, px: 1,
-                          borderColor: d.isRecording ? 'rgba(255,23,68,0.5)' : 'rgba(0,229,255,0.3)',
-                          color: d.isRecording ? '#ff5252' : '#00e5ff',
+                          borderColor: d.isRecording ? 'rgba(255,23,68,0.5)' : isOnline ? 'rgba(0,229,255,0.3)' : 'rgba(255,255,255,0.1)',
+                          color: d.isRecording ? '#ff5252' : isOnline ? '#00e5ff' : '#64748b',
                           background: d.isRecording ? 'rgba(255,23,68,0.1)' : 'rgba(0,229,255,0.06)',
                           whiteSpace: 'nowrap',
+                          '&.Mui-disabled': {
+                            color: '#64748b',
+                            borderColor: 'rgba(255,255,255,0.06)',
+                          },
                         }}
                       >
                         {d.isRecording ? 'Stop' : 'Record'}
@@ -399,20 +414,22 @@ export default function Devices() {
                       (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
 
                     return (
-                      <TableRow key={d.deviceId} hover>
+                      <TableRow key={d.deviceId} hover sx={{ opacity: isOnline ? 1 : 0.75 }}>
                         {/* Device Info */}
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                             <Box sx={{
                               width: 36, height: 36, borderRadius: '10px',
-                              background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.25)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff',
+                              background: isOnline ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.05)',
+                              border: isOnline ? '1px solid rgba(0,229,255,0.25)' : '1px solid rgba(255,255,255,0.1)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: isOnline ? '#00e5ff' : '#64748b',
                               flexShrink: 0,
                             }}>
                               <Smartphone size={17} />
                             </Box>
                             <Box>
-                              <Typography variant="body2" sx={{ fontWeight: 700, color: '#fff', '&:hover': { color: '#00e5ff' } }}>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: isOnline ? '#fff' : '#cbd5e1', '&:hover': { color: '#00e5ff' } }}>
                                 {d.deviceName || d.model}
                               </Typography>
                               <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace', display: 'block' }}>
@@ -471,14 +488,42 @@ export default function Devices() {
                         <TableCell>
                           <Chip
                             size="small"
-                            icon={d.batteryLevel > 50 ? <BatteryCharging size={13} /> : <BatteryLow size={13} />}
-                            label={`${d.batteryLevel || 0}%`}
+                            icon={
+                              !isOnline ? (
+                                <Battery size={13} />
+                              ) : d.batteryLevel > 50 ? (
+                                <BatteryCharging size={13} />
+                              ) : (
+                                <BatteryLow size={13} />
+                              )
+                            }
+                            label={!isOnline ? `${d.batteryLevel || 0}% (Last)` : `${d.batteryLevel || 0}%`}
+                            title={!isOnline ? `Device is offline. Last reported battery: ${d.batteryLevel || 0}%` : `Live battery: ${d.batteryLevel || 0}%`}
                             sx={{
                               height: 24,
-                              background: d.batteryLevel > 50 ? 'rgba(0,230,118,0.12)' : d.batteryLevel > 20 ? 'rgba(245,158,11,0.12)' : 'rgba(255,23,68,0.12)',
-                              border: d.batteryLevel > 50 ? '1px solid rgba(0,230,118,0.3)' : d.batteryLevel > 20 ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(255,23,68,0.3)',
-                              color: d.batteryLevel > 50 ? '#00e676' : d.batteryLevel > 20 ? '#f59e0b' : '#ff1744',
-                              fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                              background: !isOnline
+                                ? 'rgba(255,255,255,0.04)'
+                                : d.batteryLevel > 50
+                                ? 'rgba(0,230,118,0.12)'
+                                : d.batteryLevel > 20
+                                ? 'rgba(245,158,11,0.12)'
+                                : 'rgba(255,23,68,0.12)',
+                              border: !isOnline
+                                ? '1px solid rgba(255,255,255,0.1)'
+                                : d.batteryLevel > 50
+                                ? '1px solid rgba(0,230,118,0.3)'
+                                : d.batteryLevel > 20
+                                ? '1px solid rgba(245,158,11,0.3)'
+                                : '1px solid rgba(255,23,68,0.3)',
+                              color: !isOnline
+                                ? '#94a3b8'
+                                : d.batteryLevel > 50
+                                ? '#00e676'
+                                : d.batteryLevel > 20
+                                ? '#f59e0b'
+                                : '#ff1744',
+                              fontFamily: '"JetBrains Mono", monospace',
+                              fontWeight: isOnline ? 700 : 500,
                               '& .MuiChip-icon': { color: 'inherit' },
                             }}
                           />
@@ -538,36 +583,50 @@ export default function Devices() {
                             <Button
                               size="small"
                               variant="contained"
+                              disabled={!isOnline}
                               onClick={() => handleStartLiveStream(d)}
                               startIcon={<Radio size={13} />}
                               sx={{
                                 fontSize: '0.75rem', py: 0.5, px: 1.5,
-                                background: 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)',
-                                border: '1px solid rgba(255,23,68,0.4)',
-                                color: '#ff5252',
-                                boxShadow: '0 0 10px rgba(255,23,68,0.2)',
-                                '&:hover': {
+                                background: isOnline
+                                  ? 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)'
+                                  : 'rgba(255,255,255,0.04)',
+                                border: isOnline
+                                  ? '1px solid rgba(255,23,68,0.4)'
+                                  : '1px solid rgba(255,255,255,0.08)',
+                                color: isOnline ? '#ff5252' : '#64748b',
+                                boxShadow: isOnline ? '0 0 10px rgba(255,23,68,0.2)' : 'none',
+                                '&:hover': isOnline ? {
                                   background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)',
                                   color: '#fff',
                                   boxShadow: '0 0 16px rgba(255,23,68,0.4)',
+                                } : {},
+                                '&.Mui-disabled': {
+                                  color: '#64748b',
+                                  borderColor: 'rgba(255,255,255,0.06)',
                                 },
                               }}
                             >
-                              Watch Live
+                              {isOnline ? 'Watch Live' : 'Offline'}
                             </Button>
                             <Button
                               size="small"
                               variant="outlined"
+                              disabled={!isOnline}
                               onClick={() => d.isRecording ? handleStopRemoteRecording(d.deviceId) : handleStartRemoteRecording(d.deviceId)}
                               startIcon={<Video size={13} />}
                               sx={{
                                 fontSize: '0.75rem', py: 0.5, px: 1.5,
                                 borderColor: d.isRecording ? 'rgba(255,23,68,0.5)' : 'rgba(0,229,255,0.3)',
-                                color: d.isRecording ? '#ff5252' : '#00e5ff',
+                                color: d.isRecording ? '#ff5252' : isOnline ? '#00e5ff' : '#64748b',
                                 background: d.isRecording ? 'rgba(255,23,68,0.1)' : 'rgba(0,229,255,0.06)',
-                                '&:hover': {
+                                '&:hover': isOnline ? {
                                   background: d.isRecording ? 'rgba(255,23,68,0.2)' : 'rgba(0,229,255,0.15)',
                                   borderColor: d.isRecording ? '#ff1744' : '#00e5ff',
+                                } : {},
+                                '&.Mui-disabled': {
+                                  color: '#64748b',
+                                  borderColor: 'rgba(255,255,255,0.06)',
                                 },
                               }}
                             >

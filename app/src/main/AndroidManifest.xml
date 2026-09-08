@@ -43,12 +43,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Calculator Disguise Activity -->
-        <activity
-            android:name=".CalculatorActivity"
-            android:exported="true"
-            android:label="Calculator"
-            android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar" />
 
         <!-- Background Camera Recording Foreground Service -->
         <service

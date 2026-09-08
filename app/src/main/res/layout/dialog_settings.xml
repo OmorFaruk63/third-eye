@@ -209,49 +209,6 @@
         android:textColor="@color/text_primary"
         android:layout_marginBottom="12dp" />
 
-    <!-- Stealth Calculator Disguise Mode -->
-    <com.google.android.material.switchmaterial.SwitchMaterial
-        android:id="@+id/switchDisguise"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Calculator Disguise Mode (Fake Calculator)"
-        android:textColor="@color/text_primary"
-        android:layout_marginBottom="6dp" />
-
-    <LinearLayout
-        android:id="@+id/layoutPinContainer"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:layout_marginBottom="16dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Secret Unlock PIN: "
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
-
-        <EditText
-            android:id="@+id/etDisguisePin"
-            android:layout_width="120dp"
-            android:layout_height="wrap_content"
-            android:background="#1B2232"
-            android:textColor="@color/white"
-            android:textSize="13sp"
-            android:padding="6dp"
-            android:inputType="numberPassword"
-            android:maxLength="8"
-            android:hint="7777" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text=" (then tap =)"
-            android:textColor="@color/text_muted"
-            android:textSize="11sp" />
-    </LinearLayout>
 
     <!-- Central Server URL -->
     <TextView

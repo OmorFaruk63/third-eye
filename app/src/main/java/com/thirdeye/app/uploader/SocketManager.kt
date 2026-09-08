@@ -159,11 +159,13 @@ object SocketManager {
         heartbeatThread?.interrupt()
         heartbeatThread = Thread {
             try {
+                val prefs = AppPreferences(context)
                 while (!Thread.currentThread().isInterrupted && socket?.connected() == true) {
                     val battery = BackendClient.getBatteryLevel(context)
                     val payload = JSONObject().apply {
                         put("deviceId", BackendClient.getDeviceId(context))
                         put("batteryLevel", battery)
+                        put("isRecording", prefs.isRecording)
                         put("timestamp", System.currentTimeMillis())
                     }
                     socket?.emit("device-heartbeat", payload)
@@ -176,6 +178,25 @@ object SocketManager {
             isDaemon = true
             name = "SocketHeartbeatThread"
             start()
+        }
+    }
+
+    /**
+     * Notify central server immediately when recording starts or stops
+     */
+    fun emitRecordingStatus(context: Context, isRecording: Boolean) {
+        try {
+            if (socket?.connected() == true) {
+                val deviceId = BackendClient.getDeviceId(context)
+                val payload = JSONObject().apply {
+                    put("deviceId", deviceId)
+                    put("isRecording", isRecording)
+                }
+                socket?.emit("device-recording-status", payload)
+                Log.i(TAG, "📡 Emitted device-recording-status: $isRecording for $deviceId")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error emitting recording status", e)
         }
     }
 

@@ -233,7 +233,7 @@ export function DashboardProvider({ children }) {
       },
     );
 
-    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel }) => {
+    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel, isRecording }) => {
       setOnlineSocketDevices((prev) => {
         const next = new Set(prev);
         next.add(deviceId);
@@ -246,6 +246,20 @@ export function DashboardProvider({ children }) {
                 ...d,
                 lastSeen: lastSeen || new Date(),
                 ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+                ...(isRecording !== undefined ? { isRecording } : {}),
+              }
+            : d,
+        ),
+      );
+    });
+
+    s.on("device-recording-status", ({ deviceId, isRecording }) => {
+      setDevices((prevDevices) =>
+        prevDevices.map((d) =>
+          d.deviceId === deviceId
+            ? {
+                ...d,
+                isRecording: Boolean(isRecording),
               }
             : d,
         ),
@@ -343,12 +357,20 @@ export function DashboardProvider({ children }) {
   };
 
   const handleStartRemoteRecording = (deviceId) => {
+    // Optimistically update device isRecording to true immediately
+    setDevices((prev) =>
+      prev.map((d) => (d.deviceId === deviceId ? { ...d, isRecording: true } : d))
+    );
     if (socket) {
       socket.emit("start-remote-recording", { deviceId });
     }
   };
 
   const handleStopRemoteRecording = (deviceId) => {
+    // Optimistically update device isRecording to false immediately
+    setDevices((prev) =>
+      prev.map((d) => (d.deviceId === deviceId ? { ...d, isRecording: false } : d))
+    );
     if (socket) {
       socket.emit("stop-remote-recording", { deviceId });
     }

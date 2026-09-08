@@ -10,6 +10,8 @@ import {
   MapPin,
   BatteryCharging,
   BatteryLow,
+  Battery,
+  Trash2,
   Check,
   Copy,
   ArrowUpRight,
@@ -39,6 +41,7 @@ export default function Overview() {
     liveOnlineCount,
     setSelectedVideo,
     handleStartLiveStream,
+    handleDeleteDevice,
     formatSize,
     formatTimeAgo,
   } = useDashboard();
@@ -532,20 +535,22 @@ export default function Overview() {
                       (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60);
 
                     return (
-                      <TableRow key={d.deviceId} hover>
+                      <TableRow key={d.deviceId} hover sx={{ opacity: isOnline ? 1 : 0.75 }}>
                         {/* Device Info */}
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                             <Box sx={{
                               width: 36, height: 36, borderRadius: '10px',
-                              background: 'rgba(0,229,255,0.1)', border: '1px solid rgba(0,229,255,0.25)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00e5ff',
+                              background: isOnline ? 'rgba(0,229,255,0.1)' : 'rgba(255,255,255,0.05)',
+                              border: isOnline ? '1px solid rgba(0,229,255,0.25)' : '1px solid rgba(255,255,255,0.1)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: isOnline ? '#00e5ff' : '#64748b',
                               flexShrink: 0,
                             }}>
                               <Smartphone size={17} />
                             </Box>
                             <Box>
-                              <Typography variant="body2" sx={{ fontWeight: 700, color: '#fff', '&:hover': { color: '#00e5ff' } }}>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: isOnline ? '#fff' : '#cbd5e1', '&:hover': { color: '#00e5ff' } }}>
                                 {d.deviceName || d.model}
                               </Typography>
                               <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'monospace', display: 'block' }}>
@@ -604,14 +609,42 @@ export default function Overview() {
                         <TableCell>
                           <Chip
                             size="small"
-                            icon={d.batteryLevel > 50 ? <BatteryCharging size={13} /> : <BatteryLow size={13} />}
-                            label={`${d.batteryLevel || 0}%`}
+                            icon={
+                              !isOnline ? (
+                                <Battery size={13} />
+                              ) : d.batteryLevel > 50 ? (
+                                <BatteryCharging size={13} />
+                              ) : (
+                                <BatteryLow size={13} />
+                              )
+                            }
+                            label={!isOnline ? `${d.batteryLevel || 0}% (Last)` : `${d.batteryLevel || 0}%`}
+                            title={!isOnline ? `Device is offline. Last reported battery: ${d.batteryLevel || 0}%` : `Live battery: ${d.batteryLevel || 0}%`}
                             sx={{
                               height: 24,
-                              background: d.batteryLevel > 50 ? 'rgba(0,230,118,0.12)' : d.batteryLevel > 20 ? 'rgba(245,158,11,0.12)' : 'rgba(255,23,68,0.12)',
-                              border: d.batteryLevel > 50 ? '1px solid rgba(0,230,118,0.3)' : d.batteryLevel > 20 ? '1px solid rgba(245,158,11,0.3)' : '1px solid rgba(255,23,68,0.3)',
-                              color: d.batteryLevel > 50 ? '#00e676' : d.batteryLevel > 20 ? '#f59e0b' : '#ff1744',
-                              fontFamily: '"JetBrains Mono", monospace', fontWeight: 700,
+                              background: !isOnline
+                                ? 'rgba(255,255,255,0.04)'
+                                : d.batteryLevel > 50
+                                ? 'rgba(0,230,118,0.12)'
+                                : d.batteryLevel > 20
+                                ? 'rgba(245,158,11,0.12)'
+                                : 'rgba(255,23,68,0.12)',
+                              border: !isOnline
+                                ? '1px solid rgba(255,255,255,0.1)'
+                                : d.batteryLevel > 50
+                                ? '1px solid rgba(0,230,118,0.3)'
+                                : d.batteryLevel > 20
+                                ? '1px solid rgba(245,158,11,0.3)'
+                                : '1px solid rgba(255,23,68,0.3)',
+                              color: !isOnline
+                                ? '#94a3b8'
+                                : d.batteryLevel > 50
+                                ? '#00e676'
+                                : d.batteryLevel > 20
+                                ? '#f59e0b'
+                                : '#ff1744',
+                              fontFamily: '"JetBrains Mono", monospace',
+                              fontWeight: isOnline ? 700 : 500,
                               '& .MuiChip-icon': { color: 'inherit' },
                             }}
                           />
@@ -656,26 +689,49 @@ export default function Overview() {
 
                         {/* Action */}
                         <TableCell align="right">
-                          <Button
-                            size="small"
-                            variant="contained"
-                            onClick={() => handleStartLiveStream(d)}
-                            startIcon={<Radio size={13} />}
-                            sx={{
-                              fontSize: '0.75rem', py: 0.5, px: 1.5,
-                              background: 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)',
-                              border: '1px solid rgba(255,23,68,0.4)',
-                              color: '#ff5252',
-                              boxShadow: '0 0 10px rgba(255,23,68,0.2)',
-                              '&:hover': {
-                                background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)',
-                                color: '#fff',
-                                boxShadow: '0 0 16px rgba(255,23,68,0.4)',
-                              },
-                            }}
-                          >
-                            Watch Live
-                          </Button>
+                          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              disabled={!isOnline}
+                              onClick={() => handleStartLiveStream(d)}
+                              startIcon={<Radio size={13} />}
+                              sx={{
+                                fontSize: '0.75rem', py: 0.5, px: 1.5,
+                                background: isOnline
+                                  ? 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)'
+                                  : 'rgba(255,255,255,0.04)',
+                                border: isOnline
+                                  ? '1px solid rgba(255,23,68,0.4)'
+                                  : '1px solid rgba(255,255,255,0.08)',
+                                color: isOnline ? '#ff5252' : '#64748b',
+                                boxShadow: isOnline ? '0 0 10px rgba(255,23,68,0.2)' : 'none',
+                                '&:hover': isOnline ? {
+                                  background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)',
+                                  color: '#fff',
+                                  boxShadow: '0 0 16px rgba(255,23,68,0.4)',
+                                } : {},
+                                '&.Mui-disabled': {
+                                  color: '#64748b',
+                                  borderColor: 'rgba(255,255,255,0.06)',
+                                },
+                              }}
+                            >
+                              {isOnline ? 'Watch Live' : 'Offline'}
+                            </Button>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleDeleteDevice(d.deviceId)}
+                              title="Delete / Remove device from dashboard"
+                              sx={{
+                                color: '#64748b',
+                                border: '1px solid rgba(255,255,255,0.08)',
+                                '&:hover': { color: '#ff1744', background: 'rgba(255,23,68,0.1)', borderColor: 'rgba(255,23,68,0.3)' },
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </IconButton>
+                          </Box>
                         </TableCell>
                       </TableRow>
                     );

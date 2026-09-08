@@ -93,13 +93,7 @@ class MainActivity : AppCompatActivity() {
 
         prefs = AppPreferences(this)
 
-        // Check if Calculator disguise is enabled
-        if (prefs.isDisguiseEnabled && !intent.getBooleanExtra("FROM_DISGUISE", false)) {
-            val disguiseIntent = Intent(this, CalculatorActivity::class.java)
-            startActivity(disguiseIntent)
-            finish()
-            return
-        }
+
 
         timerHandler = Handler(Looper.getMainLooper())
 
@@ -331,10 +325,7 @@ class MainActivity : AppCompatActivity() {
             rb3Clicks.isChecked = true
         }
 
-        val switchDisguise = view.findViewById<SwitchMaterial>(R.id.switchDisguise)
-        val etDisguisePin = view.findViewById<EditText>(R.id.etDisguisePin)
-        switchDisguise.isChecked = prefs.isDisguiseEnabled
-        etDisguisePin.setText(prefs.disguisePin)
+
 
         val etServer = view.findViewById<EditText>(R.id.etServerUrl)
         etServer.setText(prefs.serverUrl)
@@ -370,11 +361,7 @@ class MainActivity : AppCompatActivity() {
             prefs.volumeTriggerClicks = if (rb2Clicks.isChecked) 2 else 3
             prefs.isHapticFeedbackEnabled = switchHaptic.isChecked
             prefs.isAutoDeleteAfterUpload = switchAutoDelete.isChecked
-            prefs.isDisguiseEnabled = switchDisguise.isChecked
-            val pinInput = etDisguisePin.text.toString().trim()
-            if (pinInput.isNotEmpty()) {
-                prefs.disguisePin = pinInput
-            }
+
 
             val serverUrlInput = etServer.text.toString().trim()
             if (serverUrlInput.isNotEmpty()) {

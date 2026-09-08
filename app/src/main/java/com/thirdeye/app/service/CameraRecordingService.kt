@@ -30,6 +30,7 @@ import com.thirdeye.app.MainActivity
 import com.thirdeye.app.R
 import com.thirdeye.app.uploader.BackendClient
 import com.thirdeye.app.uploader.DriveUploaderWorker
+import com.thirdeye.app.uploader.SocketManager
 import com.thirdeye.app.utils.AppPreferences
 import com.thirdeye.app.utils.HapticUtil
 import com.thirdeye.app.utils.StorageUtil
@@ -377,6 +378,8 @@ class CameraRecordingService : LifecycleService() {
             setPackage(packageName)
         }
         sendBroadcast(intent)
+        // Broadcast immediately to SocketManager so Admin Web Dashboard gets real-time state!
+        SocketManager.emitRecordingStatus(applicationContext, isRecording)
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
