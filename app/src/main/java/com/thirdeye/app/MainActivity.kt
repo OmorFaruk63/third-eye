@@ -323,6 +323,14 @@ class MainActivity : AppCompatActivity() {
         val switchAutoDelete = view.findViewById<SwitchMaterial>(R.id.switchAutoDelete)
         switchAutoDelete.isChecked = prefs.isAutoDeleteAfterUpload
 
+        val rb2Clicks = view.findViewById<RadioButton>(R.id.rb2Clicks)
+        val rb3Clicks = view.findViewById<RadioButton>(R.id.rb3Clicks)
+        if (prefs.volumeTriggerClicks == 2) {
+            rb2Clicks.isChecked = true
+        } else {
+            rb3Clicks.isChecked = true
+        }
+
         val switchDisguise = view.findViewById<SwitchMaterial>(R.id.switchDisguise)
         val etDisguisePin = view.findViewById<EditText>(R.id.etDisguisePin)
         switchDisguise.isChecked = prefs.isDisguiseEnabled
@@ -343,7 +351,8 @@ class MainActivity : AppCompatActivity() {
             // Open Accessibility Settings
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
             startActivity(intent)
-            Toast.makeText(this, "Enable 'Third Eye' in Accessibility to activate Volume shortcut", Toast.LENGTH_LONG).show()
+            val clicksLabel = if (prefs.volumeTriggerClicks == 2) "2x" else "3x"
+            Toast.makeText(this, "Enable 'Third Eye' in Accessibility to activate Volume ($clicksLabel) shortcut", Toast.LENGTH_LONG).show()
         }
 
         view.findViewById<Button>(R.id.btnSaveSettings).setOnClickListener {
@@ -358,6 +367,7 @@ class MainActivity : AppCompatActivity() {
                 rb15.isChecked -> 15
                 else -> 30
             }
+            prefs.volumeTriggerClicks = if (rb2Clicks.isChecked) 2 else 3
             prefs.isHapticFeedbackEnabled = switchHaptic.isChecked
             prefs.isAutoDeleteAfterUpload = switchAutoDelete.isChecked
             prefs.isDisguiseEnabled = switchDisguise.isChecked

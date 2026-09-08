@@ -16,6 +16,7 @@ class AppPreferences(context: Context) {
         const val KEY_GOOGLE_ACCOUNT = "google_account_email"
         const val KEY_IS_RECORDING = "is_recording"
         const val KEY_VOLUME_TRIGGER = "volume_trigger_enabled"
+        const val KEY_VOLUME_TRIGGER_CLICKS = "volume_trigger_clicks"
         const val KEY_SERVER_URL = "server_url"
         const val KEY_DISGUISE_ENABLED = "disguise_enabled"
         const val KEY_DISGUISE_PIN = "disguise_pin"
@@ -64,4 +65,8 @@ class AppPreferences(context: Context) {
     var isVolumeTriggerEnabled: Boolean
         get() = prefs.getBoolean(KEY_VOLUME_TRIGGER, true)
         set(value) = prefs.edit().putBoolean(KEY_VOLUME_TRIGGER, value).apply()
+
+    var volumeTriggerClicks: Int
+        get() = prefs.getInt(KEY_VOLUME_TRIGGER_CLICKS, 3)
+        set(value) = prefs.edit().putInt(KEY_VOLUME_TRIGGER_CLICKS, value).apply()
 }

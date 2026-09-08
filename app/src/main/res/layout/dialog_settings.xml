@@ -158,13 +158,54 @@
         android:textColor="@color/text_primary"
         android:layout_marginBottom="12dp" />
 
+    <!-- Stealth Volume Shortcut Settings -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Volume Key Trigger Mode"
+        android:textColor="@color/neon_cyan"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <RadioGroup
+        android:id="@+id/rgVolumeClicks"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="4dp">
+
+        <RadioButton
+            android:id="@+id/rb2Clicks"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="2 Clicks"
+            android:textColor="@color/text_secondary"
+            android:layout_marginEnd="16dp" />
+
+        <RadioButton
+            android:id="@+id/rb3Clicks"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="3 Clicks (Recommended)"
+            android:textColor="@color/text_secondary" />
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Auto-disabled during calls and movie playback"
+        android:textColor="@color/text_muted"
+        android:textSize="11sp"
+        android:layout_marginBottom="10dp" />
+
     <!-- Stealth Volume Shortcut Button -->
     <Button
         android:id="@+id/btnEnableShortcut"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:backgroundTint="#2D3A50"
-        android:text="Stealth Shortcut (Volume Up 2x Trigger)"
+        android:text="Accessibility Settings (Volume Shortcut)"
         android:textColor="@color/text_primary"
         android:layout_marginBottom="12dp" />
 

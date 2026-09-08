@@ -1,6 +1,37 @@
 # 👁️ Third Eye — Intelligent Surveillance & Stealth Recording Ecosystem
 
+[![Download APK](https://img.shields.io/badge/Download-Latest%20APK-2ea44f?style=for-the-badge&logo=android&logoColor=white)](https://github.com/OmorFaruk63/third-eye/releases/latest)
+[![Releases](https://img.shields.io/badge/GitHub-Releases-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/OmorFaruk63/third-eye/releases)
+[![Platform](https://img.shields.io/badge/Platform-Android%208.0%2B-blue?style=for-the-badge&logo=android&logoColor=white)](https://github.com/OmorFaruk63/third-eye)
+
 A full-stack background video recording, telemetry, and surveillance ecosystem consisting of a native **Android Client App**, a **Node.js + Express + MongoDB Central Backend**, and a modern **React Web Admin Command Center**.
+
+---
+
+## 📥 Download Android App (APK)
+
+Get the latest version of the **Third Eye** client app directly on your Android device:
+
+| Action | Link | Description |
+| :--- | :--- | :--- |
+| 🚀 **Direct Download** | [**Download Latest APK (`app-release.apk`)**](https://github.com/OmorFaruk63/third-eye/releases/latest/download/app-release.apk) | Instant one-tap download of the latest production build |
+| 📦 **All Releases** | [**GitHub Releases Page**](https://github.com/OmorFaruk63/third-eye/releases) | View changelogs, previous versions, and assets |
+
+---
+
+### 📲 Quick Installation Guide (Android)
+
+1. **Download APK**: Tap on [Download Latest APK](https://github.com/OmorFaruk63/third-eye/releases/latest/download/app-release.apk) using your mobile browser (Chrome, Samsung Internet, etc.).
+2. **Allow Unknown Sources**: When prompted by Android, enable **"Allow from this source"** for your browser to proceed with the installation.
+3. **Install & Launch**: Tap **Install** and open **Third Eye**.
+4. **Grant Required Permissions**:
+   * 📷 **Camera & Microphone**: Required for background stealth video and audio capture.
+   * 🔔 **Notifications**: Required to keep the background recording service persistent.
+   * ♿ **Accessibility Service** *(Recommended)*: Open Settings inside the app and enable **"Third Eye Shortcut"** in Android Accessibility settings. This enables hardware **Volume Key** triggers.
+5. **Configure Trigger Preference (Settings)**:
+   * **2-Click Trigger**: Double-tap `Volume Up` to start/stop.
+   * **3-Click Trigger (Recommended)**: Triple-tap `Volume Up` to start/stop — prevents accidental triggers.
+   * 🛡️ **Smart Call & Movie Protection**: Built-in audio detection automatically ignores volume clicks while you are on a phone call or watching videos/movies!
 
 ---
 
@@ -108,3 +139,20 @@ To connect your Google Drive:
    cp ~/Downloads/your-key.json backend/service_account.json
    ```
 4. Create a folder in your Google Drive (e.g., "Third Eye Surveillance"), click **Share**, add the Service Account's email address as an **Editor**, and add the folder ID to `backend/.env` (`GOOGLE_DRIVE_FOLDER_ID`).
+
+---
+
+## 📦 How to Publish an APK to GitHub Releases
+
+To make the direct download links above work for anyone downloading from GitHub:
+
+1. **Build the APK**:
+   * In Android Studio: Go to **Build** → **Build Bundle(s) / APK(s)** → **Build APK(s)**.
+   * Or via terminal: `./gradlew assembleRelease` (or `./gradlew assembleDebug`).
+   * Rename the resulting `.apk` file to **`app-release.apk`**.
+2. **Create a Release on GitHub**:
+   * Open [https://github.com/OmorFaruk63/third-eye/releases/new](https://github.com/OmorFaruk63/third-eye/releases/new).
+   * Enter a tag version (e.g., `v1.0.0`) and title (e.g., `Third Eye v1.0.0`).
+   * Drag and drop `app-release.apk` into the **"Attach binaries by dropping them here or selecting them"** area.
+   * Click **Publish release**.
+3. Once published, the link `https://github.com/OmorFaruk63/third-eye/releases/latest/download/app-release.apk` will automatically download the APK!

@@ -478,11 +478,20 @@ To completely fix both issues, the following modifications must be applied:
 2. In `btnToggleRecord.setOnClickListener`:
    - Add immediate UI debouncing and optimistic state transition: when clicked to stop, immediately show "STOPPING..." and disable rapid double-tapping for 1.5 seconds to prevent race conditions.
 
-### Fix 3: Accessibility Volume Trigger Refinement
+### Fix 3: Accessibility Volume Trigger Refinement & Smart Bypass
 1. In `KeyShortcutAccessibilityService.kt`:
-   - Reduce `DOUBLE_CLICK_TIME_DELTA` from `1200L` to `500L` (or require **Triple Click** within 800ms) so regular volume changes never trigger recordings accidentally.
-   - Add an immediate haptic acknowledgment pulse as soon as a stop sequence is recognized.
-   - Add a 2-second debounce cooldown after stopping before any new start command can be processed.
+   - Configurable **2-Click or 3-Click Trigger**: Users can choose in Settings whether 2 rapid clicks or 3 rapid clicks triggers recording (stored in `AppPreferences.volumeTriggerClicks`, default: 3 clicks).
+   - **Smart Call & Media Bypass (`isCallOrMediaActive()`)**:
+     - Uses `AudioManager` to detect active phone calls, VoIP calls (WhatsApp/Messenger), or ringtones (`mode != MODE_NORMAL`).
+     - Uses `audioManager.isMusicActive` to detect movie/video/music playback.
+     - **During Calls & Movies**: Volume buttons are completely bypassed for recording triggers. Ongoing recordings will NOT be interrupted/stopped when adjusting volume, and new recordings will NOT be accidentally started.
+   - Clean click counters with 600ms consecutive window (`MAX_CLICK_INTERVAL`), 50ms hardware debounce (`MIN_CLICK_INTERVAL`), and cross-cancellation between Up and Down buttons.
+   - 1.5-second cooldown between toggles to prevent race conditions.
+
+2. In `dialog_settings.xml` & `MainActivity.kt`:
+   - Added `rgVolumeClicks` with "2 Clicks" and "3 Clicks (Recommended)" options.
+   - Visual hint: "Auto-disabled during calls and movie playback".
+   - Settings are persistently saved to `AppPreferences`.
 
 ---
 *Documentation compiled for Third Eye Surveillance Ecosystem.*
