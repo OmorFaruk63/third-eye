@@ -91,7 +91,7 @@ object SocketManager {
                     if (!CameraRecordingService.isServiceRunning) {
                         LiveStreamService.startService(context, camera)
                     } else {
-                        Log.i(TAG, "CameraRecordingService already active & streaming frames.")
+                        Log.w(TAG, "🎥 Video recording is actively running (#1 Top Priority). Live stream request ignored to protect video recording.")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling start-live-stream", e)
@@ -128,10 +128,22 @@ object SocketManager {
                     }
                     val lens = if (camera.equals("FRONT", ignoreCase = true)) "FRONT" else "BACK"
                     prefs.cameraLens = lens
-                    Log.i(TAG, "📡 Received REMOTE START recording command with lens: $lens")
-                    // Stop LiveStreamService first to cleanly hand over camera hardware to CameraRecordingService
+                    Log.i(TAG, "📡 Received REMOTE START recording command with lens: $lens (#1 Top Priority)")
+
+                    // Stop LiveStreamService first to cleanly release camera & mic hardware
+                    val wasLiveRunning = LiveStreamService.isServiceRunning
                     LiveStreamService.stopService(context)
-                    CameraRecordingService.startService(context, enableVibration = false, cameraLens = lens)
+
+                    Thread {
+                        try {
+                            if (wasLiveRunning) {
+                                Thread.sleep(250)
+                            }
+                        } catch (e: Exception) {
+                            // ignore
+                        }
+                        CameraRecordingService.startService(context, enableVibration = false, cameraLens = lens)
+                    }.start()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error starting remote recording", e)
                 }

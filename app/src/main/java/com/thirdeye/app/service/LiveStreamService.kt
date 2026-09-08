@@ -41,6 +41,9 @@ class LiveStreamService : LifecycleService() {
         const val ACTION_SWITCH_CAMERA = "com.thirdeye.app.ACTION_SWITCH_CAMERA"
         const val EXTRA_CAMERA_LENS = "extra_camera_lens"
 
+        @Volatile
+        var isServiceRunning = false
+
         fun startService(context: Context, cameraLens: String = "BACK") {
             val intent = Intent(context, LiveStreamService::class.java).apply {
                 action = ACTION_START_STREAM
@@ -77,12 +80,20 @@ class LiveStreamService : LifecycleService() {
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         cameraExecutor = Executors.newSingleThreadExecutor()
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+
+        // Video Recording is #1 Priority: If recording is active, do not start live stream
+        if (CameraRecordingService.isServiceRunning) {
+            Log.w(TAG, "CameraRecordingService is actively recording. Yielding camera priority to recording.")
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         when (intent?.action) {
             ACTION_START_STREAM -> {
@@ -255,13 +266,13 @@ class LiveStreamService : LifecycleService() {
 
             imageAnalysis.setAnalyzer(executor) { imageProxy ->
                 val now = System.currentTimeMillis()
-                // Rate-limit to approx 15 FPS (every 66ms) to keep bandwidth minimal
-                if (now - lastFrameTime >= 65) {
+                // Rate-limit to approx 13 FPS (every 75ms) for ultra-lightweight, smooth live surveillance
+                if (now - lastFrameTime >= 75) {
                     lastFrameTime = now
                     try {
                         val bitmap = imageProxy.toBitmap()
                         val out = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 60, out)
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 50, out)
                         val jpegBytes = out.toByteArray()
                         SocketManager.sendFrame(applicationContext, jpegBytes)
                     } catch (e: Exception) {
@@ -275,11 +286,13 @@ class LiveStreamService : LifecycleService() {
             Log.i(TAG, " Live camera analysis bound successfully (Lens: $currentLens)")
         } catch (e: Exception) {
             Log.e(TAG, "Failed binding camera for live stream", e)
+            isServiceRunning = false
             stopSelf()
         }
     }
 
     private fun stopStream() {
+        isServiceRunning = false
         stopAudioStreaming()
         try {
             cameraProvider?.unbindAll()
@@ -292,6 +305,7 @@ class LiveStreamService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        isServiceRunning = false
         stopStream()
         cameraExecutor?.shutdown()
         cameraExecutor = null
