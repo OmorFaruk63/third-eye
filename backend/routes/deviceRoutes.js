@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Device = require('../models/Device');
+const { resolveVillageOrPara } = require('../utils/geoCoder');
 
 // Device Heartbeat & Registration
 router.post('/ping', async (req, res) => {
@@ -17,6 +18,8 @@ router.post('/ping', async (req, res) => {
       latitude,
       longitude,
       locationName,
+      villageOrPara,
+      districtAndCountry,
     } = req.body;
 
     if (!deviceId) {
@@ -24,6 +27,7 @@ router.post('/ping', async (req, res) => {
     }
 
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    const now = new Date();
 
     const updateFields = {
       deviceName: deviceName || 'Android Device',
@@ -33,7 +37,7 @@ router.post('/ping', async (req, res) => {
       isRecording: Boolean(isRecording),
       videoQuality: videoQuality || '720p',
       appVersion: appVersion || '1.0',
-      lastSeen: new Date(),
+      lastSeen: now,
       ipAddress,
     };
 
@@ -45,6 +49,12 @@ router.post('/ping', async (req, res) => {
     }
     if (locationName) {
       updateFields.locationName = locationName;
+    }
+    if (villageOrPara) {
+      updateFields.villageOrPara = villageOrPara;
+    }
+    if (districtAndCountry) {
+      updateFields.districtAndCountry = districtAndCountry;
     }
 
     // Fallback: If device GPS is not ready/cached, resolve location via public IP
@@ -65,6 +75,25 @@ router.post('/ping', async (req, res) => {
       }
     }
 
+    if (updateFields.latitude && updateFields.longitude) {
+      updateFields.locationUpdatedAt = now;
+      // High-precision Village / Para resolution if not already set or if generic
+      const isGeneric = !updateFields.villageOrPara ||
+        ['dhaka', 'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barishal', 'rangpur'].includes(updateFields.villageOrPara.toLowerCase().trim());
+      if (isGeneric) {
+        try {
+          const resolved = await resolveVillageOrPara(updateFields.latitude, updateFields.longitude);
+          if (resolved && resolved.villageOrPara) {
+            updateFields.villageOrPara = resolved.villageOrPara;
+            if (resolved.districtAndCountry) updateFields.districtAndCountry = resolved.districtAndCountry;
+            if (resolved.locationName) updateFields.locationName = resolved.locationName;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+
     const device = await Device.findOneAndUpdate(
       { deviceId },
       updateFields,
@@ -82,6 +111,25 @@ router.post('/ping', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const devices = await Device.find().sort({ lastSeen: -1 });
+
+    // Asynchronously ensure any devices with lat/long have village/para populated
+    for (const d of devices) {
+      if (d.latitude && d.longitude && (!d.villageOrPara || ['dhaka', 'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barishal', 'rangpur'].includes(d.villageOrPara.toLowerCase().trim()))) {
+        resolveVillageOrPara(d.latitude, d.longitude).then((resolved) => {
+          if (resolved && resolved.villageOrPara) {
+            Device.updateOne(
+              { _id: d._id },
+              {
+                villageOrPara: resolved.villageOrPara,
+                districtAndCountry: resolved.districtAndCountry || d.districtAndCountry,
+                locationName: resolved.locationName || d.locationName,
+              }
+            ).catch(() => {});
+          }
+        }).catch(() => {});
+      }
+    }
+
     res.json({ success: true, count: devices.length, devices });
   } catch (error) {
     res.status(500).json({ error: error.message });

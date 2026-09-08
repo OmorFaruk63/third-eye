@@ -118,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         // Start 24/7 background telemetry service to ensure device stays online
         com.thirdeye.app.service.DeviceTelemetryService.startService(this)
         com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
+        com.thirdeye.app.utils.LocationTracker.startListening(this)
     }
 
     override fun onResume() {
@@ -130,6 +131,7 @@ class MainActivity : AppCompatActivity() {
         BackendClient.sendPing(this)
         com.thirdeye.app.service.DeviceTelemetryService.startService(this)
         com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
+        com.thirdeye.app.utils.LocationTracker.startListening(this)
     }
 
     private var lastToggleClickTime = 0L

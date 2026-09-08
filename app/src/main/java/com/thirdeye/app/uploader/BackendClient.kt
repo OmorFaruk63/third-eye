@@ -25,7 +25,13 @@ import java.util.Locale
 object BackendClient {
     private const val TAG = "BackendClient"
 
-    data class DeviceLocation(val latitude: Double, val longitude: Double, val address: String = "")
+    data class DeviceLocation(
+        val latitude: Double,
+        val longitude: Double,
+        val villageOrPara: String = "",
+        val districtAndCountry: String = "",
+        val address: String = ""
+    )
 
     fun getDeviceId(context: Context): String {
         return Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
@@ -53,43 +59,15 @@ object BackendClient {
         }
     }
 
-    @SuppressLint("MissingPermission")
     fun getLocation(context: Context): DeviceLocation? {
-        val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-
-        if (!fineGranted && !coarseGranted) return null
-
-        try {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return null
-            val providers = locationManager.getProviders(true)
-            var bestLocation: Location? = null
-
-            for (provider in providers) {
-                val l = locationManager.getLastKnownLocation(provider) ?: continue
-                if (bestLocation == null || l.accuracy < bestLocation.accuracy) {
-                    bestLocation = l
-                }
-            }
-
-            if (bestLocation != null) {
-                var addressText = ""
-                try {
-                    val geocoder = Geocoder(context, Locale.getDefault())
-                    val addresses = geocoder.getFromLocation(bestLocation.latitude, bestLocation.longitude, 1)
-                    if (!addresses.isNullOrEmpty()) {
-                        val addr = addresses[0]
-                        addressText = listOfNotNull(addr.locality, addr.subAdminArea, addr.countryName).joinToString(", ")
-                    }
-                } catch (e: Exception) {
-                    // Geocoder failed or offline, coordinates still valid
-                }
-                return DeviceLocation(bestLocation.latitude, bestLocation.longitude, addressText)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to get location: ${e.message}")
-        }
-        return null
+        val loc = com.thirdeye.app.utils.LocationTracker.getLiveLocation(context) ?: return null
+        return DeviceLocation(
+            latitude = loc.latitude,
+            longitude = loc.longitude,
+            villageOrPara = loc.villageOrPara,
+            districtAndCountry = loc.districtAndCountry,
+            address = loc.fullAddress
+        )
     }
 
     /**
@@ -125,6 +103,8 @@ object BackendClient {
                         put("latitude", loc.latitude)
                         put("longitude", loc.longitude)
                         put("locationName", loc.address)
+                        put("villageOrPara", loc.villageOrPara)
+                        put("districtAndCountry", loc.districtAndCountry)
                     }
                 }
 

@@ -5,6 +5,7 @@ import {
   Video,
   Trash2,
   MapPin,
+  Clock,
   BatteryCharging,
   BatteryLow,
   Battery,
@@ -14,6 +15,12 @@ import {
   X,
 } from 'lucide-react';
 import { useDashboard } from '../context/DashboardContext';
+import {
+  getVillageOrPara,
+  isLocationLive,
+  formatLocationAge,
+  getLocationSecondary,
+} from '../utils/locationHelper';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -21,6 +28,7 @@ import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
 import Button from '@mui/material/Button';
+import ButtonGroup from '@mui/material/ButtonGroup';
 import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
 import Table from '@mui/material/Table';
@@ -38,11 +46,12 @@ export default function Devices() {
     onlineSocketDevices,
     searchQuery,
     setSearchQuery,
-    handleStartLiveStream,
+    openCameraModal,
     handleStartRemoteRecording,
     handleStopRemoteRecording,
     handleDeleteDevice,
     formatTimeAgo,
+    updateDeviceLocation,
   } = useDashboard();
 
   const [statusFilter, setStatusFilter] = useState('ALL'); // ALL, ONLINE, RECORDING, OFFLINE
@@ -302,22 +311,155 @@ export default function Devices() {
                         </Typography>
                       </Box>
 
-                      {d.latitude && d.longitude && (
+                      {d.latitude && d.longitude ? (
+                        (() => {
+                          const isLive = isLocationLive(d, isOnline);
+                          const villageName = getVillageOrPara(d, updateDeviceLocation);
+                          const ageText = formatLocationAge(d.locationUpdatedAt, d.lastSeen);
+                          const secondary = getLocationSecondary(d);
+
+                          return (
+                            <Box sx={{ gridColumn: 'span 2' }}>
+                              <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace', textTransform: 'uppercase', fontSize: '0.65rem', display: 'block', mb: 0.4 }}>
+                                Location (Village / Para)
+                              </Typography>
+                              <Box
+                                component="a"
+                                href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={`Open in Google Maps (${d.latitude}, ${d.longitude})`}
+                                sx={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 1.2,
+                                  p: 1,
+                                  width: '100%',
+                                  borderRadius: '9px',
+                                  background: isLive
+                                    ? 'rgba(0, 230, 118, 0.08)'
+                                    : 'rgba(255, 255, 255, 0.03)',
+                                  border: isLive
+                                    ? '1px solid rgba(0, 230, 118, 0.35)'
+                                    : '1px solid rgba(255, 255, 255, 0.09)',
+                                  textDecoration: 'none',
+                                  transition: 'all 0.2s',
+                                  '&:hover': {
+                                    background: isLive ? 'rgba(0, 230, 118, 0.16)' : 'rgba(0, 229, 255, 0.12)',
+                                  },
+                                }}
+                              >
+                                <Box
+                                  sx={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: '7px',
+                                    bgcolor: isLive ? 'rgba(0, 230, 118, 0.16)' : 'rgba(255, 255, 255, 0.06)',
+                                    border: isLive ? '1px solid rgba(0, 230, 118, 0.4)' : '1px solid rgba(255, 255, 255, 0.12)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: isLive ? '#00e676' : '#94a3b8',
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  <MapPin size={14} />
+                                </Box>
+                                <Box sx={{ minWidth: 0, flex: 1 }}>
+                                  <Typography sx={{ fontSize: '0.8rem', fontWeight: 700, color: isLive ? '#00e676' : '#00e5ff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                    {villageName}
+                                  </Typography>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mt: 0.3 }}>
+                                    {isLive ? (
+                                      <Box
+                                        sx={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 0.5,
+                                          px: 0.6,
+                                          py: 0.1,
+                                          borderRadius: '4px',
+                                          background: 'rgba(0, 230, 118, 0.18)',
+                                          border: '1px solid rgba(0, 230, 118, 0.4)',
+                                        }}
+                                      >
+                                        <Box
+                                          sx={{
+                                            width: 5,
+                                            height: 5,
+                                            borderRadius: '50%',
+                                            bgcolor: '#00e676',
+                                            boxShadow: '0 0 6px #00e676',
+                                            animation: 'radar-dot-pulse 1.5s infinite',
+                                          }}
+                                        />
+                                        <Typography
+                                          sx={{
+                                            fontSize: '0.62rem',
+                                            fontWeight: 800,
+                                            color: '#00e676',
+                                            fontFamily: '"JetBrains Mono", monospace',
+                                            letterSpacing: '0.04em',
+                                          }}
+                                        >
+                                          LIVE
+                                        </Typography>
+                                      </Box>
+                                    ) : (
+                                      <Box
+                                        sx={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: 0.4,
+                                          px: 0.6,
+                                          py: 0.1,
+                                          borderRadius: '4px',
+                                          background: 'rgba(245, 158, 11, 0.14)',
+                                          border: '1px solid rgba(245, 158, 11, 0.3)',
+                                        }}
+                                      >
+                                        <Clock size={9} color="#f59e0b" />
+                                        <Typography
+                                          sx={{
+                                            fontSize: '0.62rem',
+                                            fontWeight: 700,
+                                            color: '#fbbf24',
+                                            fontFamily: '"JetBrains Mono", monospace',
+                                          }}
+                                        >
+                                          {ageText}
+                                        </Typography>
+                                      </Box>
+                                    )}
+
+                                    {secondary && (
+                                      <Typography
+                                        sx={{
+                                          fontSize: '0.66rem',
+                                          color: '#94a3b8',
+                                          lineHeight: 1.2,
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                        }}
+                                      >
+                                        {secondary}
+                                      </Typography>
+                                    )}
+                                  </Box>
+                                </Box>
+                              </Box>
+                            </Box>
+                          );
+                        })()
+                      ) : (
                         <Box sx={{ gridColumn: 'span 2' }}>
                           <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace', textTransform: 'uppercase', fontSize: '0.65rem', display: 'block' }}>
                             Location
                           </Typography>
-                          <a
-                            href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#00e5ff', textDecoration: 'none', fontSize: '0.75rem' }}
-                          >
-                            <MapPin size={11} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {d.locationName || `${d.latitude.toFixed(3)}, ${d.longitude.toFixed(3)}`}
-                            </span>
-                          </a>
+                          <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace' }}>
+                            {d.ipAddress ? d.ipAddress.split(',')[0] : 'GPS Standby'}
+                          </Typography>
                         </Box>
                       )}
                     </Box>
@@ -327,20 +469,19 @@ export default function Devices() {
                       <Button
                         size="small"
                         variant="contained"
-                        fullWidth
                         disabled={!isOnline}
-                        onClick={() => handleStartLiveStream(d)}
+                        onClick={() => openCameraModal(d, 'live')}
                         startIcon={<Radio size={13} />}
                         sx={{
-                          background: isOnline
-                            ? 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)'
-                            : 'rgba(255,255,255,0.04)',
-                          border: isOnline
-                            ? '1px solid rgba(255,23,68,0.4)'
-                            : '1px solid rgba(255,255,255,0.08)',
+                          fontSize: '0.75rem', py: 0.4, px: 1,
+                          background: isOnline ? 'linear-gradient(135deg, rgba(255,23,68,0.3) 0%, rgba(255,23,68,0.15) 100%)' : 'rgba(255,255,255,0.04)',
+                          border: isOnline ? '1px solid rgba(255,23,68,0.4)' : '1px solid rgba(255,255,255,0.08)',
                           color: isOnline ? '#ff5252' : '#64748b',
-                          fontSize: '0.75rem',
-                          '&:hover': isOnline ? { background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)', color: '#fff' } : {},
+                          whiteSpace: 'nowrap',
+                          '&:hover': isOnline ? {
+                            background: 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)',
+                            color: '#fff',
+                          } : {},
                           '&.Mui-disabled': {
                             color: '#64748b',
                             borderColor: 'rgba(255,255,255,0.06)',
@@ -351,15 +492,17 @@ export default function Devices() {
                       </Button>
                       <Button
                         size="small"
-                        variant="outlined"
+                        variant={d.isRecording ? 'contained' : 'outlined'}
                         disabled={!isOnline}
-                        onClick={() => d.isRecording ? handleStopRemoteRecording(d.deviceId) : handleStartRemoteRecording(d.deviceId)}
+                        onClick={() => d.isRecording ? handleStopRemoteRecording(d.deviceId) : openCameraModal(d, 'record')}
                         startIcon={<Video size={13} />}
                         sx={{
                           fontSize: '0.75rem', py: 0.4, px: 1,
                           borderColor: d.isRecording ? 'rgba(255,23,68,0.5)' : isOnline ? 'rgba(0,229,255,0.3)' : 'rgba(255,255,255,0.1)',
-                          color: d.isRecording ? '#ff5252' : isOnline ? '#00e5ff' : '#64748b',
-                          background: d.isRecording ? 'rgba(255,23,68,0.1)' : 'rgba(0,229,255,0.06)',
+                          color: d.isRecording ? '#fff' : isOnline ? '#00e5ff' : '#64748b',
+                          background: d.isRecording
+                            ? 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)'
+                            : 'rgba(0,229,255,0.06)',
                           whiteSpace: 'nowrap',
                           '&.Mui-disabled': {
                             color: '#64748b',
@@ -367,7 +510,7 @@ export default function Devices() {
                           },
                         }}
                       >
-                        {d.isRecording ? 'Stop' : 'Record'}
+                        {d.isRecording ? 'Stop' : 'Remote Rec'}
                       </Button>
                       <IconButton
                         size="small"
@@ -459,28 +602,169 @@ export default function Devices() {
                         {/* Location */}
                         <TableCell>
                           {d.latitude && d.longitude ? (
-                            <Button
-                              size="small"
-                              component="a"
-                              href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              startIcon={<MapPin size={12} />}
-                              sx={{
-                                fontSize: '0.75rem', py: 0.2, px: 1,
-                                background: 'rgba(0,229,255,0.08)', border: '1px solid rgba(0,229,255,0.25)',
-                                color: '#00e5ff', minWidth: 0,
-                                '&:hover': { background: 'rgba(0,229,255,0.18)' },
-                              }}
-                            >
-                              <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {d.locationName || `${d.latitude.toFixed(2)}, ${d.longitude.toFixed(2)}`}
-                              </span>
-                            </Button>
+                            (() => {
+                              const isLive = isLocationLive(d, isOnline);
+                              const villageName = getVillageOrPara(d, updateDeviceLocation);
+                              const ageText = formatLocationAge(d.locationUpdatedAt, d.lastSeen);
+                              const secondary = getLocationSecondary(d);
+
+                              return (
+                                <Box
+                                  component="a"
+                                  href={`https://www.google.com/maps?q=${d.latitude},${d.longitude}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  title={`Open in Google Maps (${d.latitude}, ${d.longitude})`}
+                                  sx={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 1.2,
+                                    px: 1.2,
+                                    py: 0.6,
+                                    borderRadius: '9px',
+                                    background: isLive
+                                      ? 'rgba(0, 230, 118, 0.08)'
+                                      : 'rgba(255, 255, 255, 0.03)',
+                                    border: isLive
+                                      ? '1px solid rgba(0, 230, 118, 0.35)'
+                                      : '1px solid rgba(255, 255, 255, 0.09)',
+                                    textDecoration: 'none',
+                                    transition: 'all 0.2s ease',
+                                    maxWidth: 240,
+                                    '&:hover': {
+                                      background: isLive
+                                        ? 'rgba(0, 230, 118, 0.16)'
+                                        : 'rgba(0, 229, 255, 0.12)',
+                                      borderColor: isLive ? '#00e676' : 'rgba(0, 229, 255, 0.4)',
+                                      transform: 'translateY(-1px)',
+                                      boxShadow: isLive
+                                        ? '0 4px 14px rgba(0, 230, 118, 0.2)'
+                                        : '0 4px 12px rgba(0, 0, 0, 0.3)',
+                                    },
+                                  }}
+                                >
+                                  <Box
+                                    sx={{
+                                      width: 26,
+                                      height: 26,
+                                      borderRadius: '7px',
+                                      bgcolor: isLive ? 'rgba(0, 230, 118, 0.16)' : 'rgba(255, 255, 255, 0.06)',
+                                      border: isLive ? '1px solid rgba(0, 230, 118, 0.4)' : '1px solid rgba(255, 255, 255, 0.12)',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      color: isLive ? '#00e676' : '#94a3b8',
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    <MapPin size={13} />
+                                  </Box>
+                                  <Box sx={{ minWidth: 0, textAlign: 'left', flex: 1 }}>
+                                    {/* Primary line: Village / Para name */}
+                                    <Typography
+                                      sx={{
+                                        fontSize: '0.8rem',
+                                        fontWeight: 700,
+                                        color: isLive ? '#00e676' : '#00e5ff',
+                                        lineHeight: 1.2,
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                      }}
+                                    >
+                                      {villageName}
+                                    </Typography>
+
+                                    {/* Status line: Live vs Time Ago */}
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mt: 0.3 }}>
+                                      {isLive ? (
+                                        <Box
+                                          sx={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 0.5,
+                                            px: 0.6,
+                                            py: 0.1,
+                                            borderRadius: '4px',
+                                            background: 'rgba(0, 230, 118, 0.18)',
+                                            border: '1px solid rgba(0, 230, 118, 0.4)',
+                                          }}
+                                        >
+                                          <Box
+                                            sx={{
+                                              width: 5,
+                                              height: 5,
+                                              borderRadius: '50%',
+                                              bgcolor: '#00e676',
+                                              boxShadow: '0 0 6px #00e676',
+                                              animation: 'radar-dot-pulse 1.5s infinite',
+                                            }}
+                                          />
+                                          <Typography
+                                            sx={{
+                                              fontSize: '0.62rem',
+                                              fontWeight: 800,
+                                              color: '#00e676',
+                                              fontFamily: '"JetBrains Mono", monospace',
+                                              letterSpacing: '0.04em',
+                                            }}
+                                          >
+                                            LIVE
+                                          </Typography>
+                                        </Box>
+                                      ) : (
+                                        <Box
+                                          sx={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: 0.4,
+                                            px: 0.6,
+                                            py: 0.1,
+                                            borderRadius: '4px',
+                                            background: 'rgba(245, 158, 11, 0.14)',
+                                            border: '1px solid rgba(245, 158, 11, 0.3)',
+                                          }}
+                                        >
+                                          <Clock size={9} color="#f59e0b" />
+                                          <Typography
+                                            sx={{
+                                              fontSize: '0.62rem',
+                                              fontWeight: 700,
+                                              color: '#fbbf24',
+                                              fontFamily: '"JetBrains Mono", monospace',
+                                            }}
+                                          >
+                                            {ageText}
+                                          </Typography>
+                                        </Box>
+                                      )}
+
+                                      {secondary && (
+                                        <Typography
+                                          sx={{
+                                            fontSize: '0.66rem',
+                                            color: '#94a3b8',
+                                            lineHeight: 1.2,
+                                            whiteSpace: 'nowrap',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                          }}
+                                        >
+                                          {secondary}
+                                        </Typography>
+                                      )}
+                                    </Box>
+                                  </Box>
+                                </Box>
+                              );
+                            })()
                           ) : (
-                            <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace' }}>
-                              {d.ipAddress ? d.ipAddress.split(',')[0] : 'GPS Standby'}
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                              <MapPin size={12} color="#64748b" />
+                              <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace' }}>
+                                {d.ipAddress ? d.ipAddress.split(',')[0] : 'GPS Standby'}
+                              </Typography>
+                            </Box>
                           )}
                         </TableCell>
 
@@ -584,7 +868,7 @@ export default function Devices() {
                               size="small"
                               variant="contained"
                               disabled={!isOnline}
-                              onClick={() => handleStartLiveStream(d)}
+                              onClick={() => openCameraModal(d, 'live')}
                               startIcon={<Radio size={13} />}
                               sx={{
                                 fontSize: '0.75rem', py: 0.5, px: 1.5,
@@ -609,19 +893,25 @@ export default function Devices() {
                             >
                               {isOnline ? 'Watch Live' : 'Offline'}
                             </Button>
+
                             <Button
                               size="small"
-                              variant="outlined"
+                              variant={d.isRecording ? 'contained' : 'outlined'}
                               disabled={!isOnline}
-                              onClick={() => d.isRecording ? handleStopRemoteRecording(d.deviceId) : handleStartRemoteRecording(d.deviceId)}
+                              onClick={() => d.isRecording ? handleStopRemoteRecording(d.deviceId) : openCameraModal(d, 'record')}
                               startIcon={<Video size={13} />}
                               sx={{
                                 fontSize: '0.75rem', py: 0.5, px: 1.5,
                                 borderColor: d.isRecording ? 'rgba(255,23,68,0.5)' : 'rgba(0,229,255,0.3)',
-                                color: d.isRecording ? '#ff5252' : isOnline ? '#00e5ff' : '#64748b',
-                                background: d.isRecording ? 'rgba(255,23,68,0.1)' : 'rgba(0,229,255,0.06)',
+                                color: d.isRecording ? '#fff' : isOnline ? '#00e5ff' : '#64748b',
+                                background: d.isRecording
+                                  ? 'linear-gradient(135deg, #ff1744 0%, #c4001d 100%)'
+                                  : 'rgba(0,229,255,0.06)',
+                                boxShadow: d.isRecording ? '0 0 12px rgba(255,23,68,0.4)' : 'none',
                                 '&:hover': isOnline ? {
-                                  background: d.isRecording ? 'rgba(255,23,68,0.2)' : 'rgba(0,229,255,0.15)',
+                                  background: d.isRecording
+                                    ? 'linear-gradient(135deg, #d50000 0%, #9b0000 100%)'
+                                    : 'rgba(0,229,255,0.15)',
                                   borderColor: d.isRecording ? '#ff1744' : '#00e5ff',
                                 } : {},
                                 '&.Mui-disabled': {

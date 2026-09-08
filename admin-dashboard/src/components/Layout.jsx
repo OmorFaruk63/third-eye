@@ -7,6 +7,7 @@ import {
   Activity, Wifi,
 } from 'lucide-react';
 import { useDashboard, API_BASE_URL } from '../context/DashboardContext';
+import CameraSelectModal from './CameraSelectModal';
 
 import Box from '@mui/material/Box';
 import AppBar from '@mui/material/AppBar';
@@ -41,6 +42,7 @@ export default function Layout() {
     isAudioMuted, liveOnlineCount,
     fetchData, handleStopLiveStream, handleSwitchCamera,
     handleTakeSnapshot, toggleAudioMute, formatSize,
+    handleToggleRecordingFromLive,
   } = useDashboard();
 
   useEffect(() => {
@@ -487,103 +489,192 @@ export default function Layout() {
       )}
 
       {/* Live Surveillance Modal */}
-      {liveDevice && (
-        <Dialog
-          open={!!liveDevice}
-          onClose={handleStopLiveStream}
-          maxWidth="lg"
-          fullWidth
-          PaperProps={{ sx: { maxHeight: '95vh', bgcolor: '#060a11', border: '1px solid rgba(0,229,255,0.2)', borderRadius: 3 } }}
-        >
-          {/* Live Modal Header */}
-          <Box sx={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            p: 2, borderBottom: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap', gap: 1.5,
-          }}>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.3 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 1, py: 0.3, borderRadius: 1, bgcolor: 'rgba(255,23,68,0.15)', border: '1px solid rgba(255,23,68,0.3)' }}>
-                  <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#ff1744', animation: 'pulse-glow 1s ease-in-out infinite' }} />
-                  <Typography sx={{ fontSize: 10, fontFamily: 'monospace', fontWeight: 700, color: '#ff616f', letterSpacing: '0.1em' }}>LIVE SURVEILLANCE FEED</Typography>
+      {liveDevice && (() => {
+        const isLiveDeviceRecording = devices.find((d) => d.deviceId === liveDevice.deviceId)?.isRecording || false;
+
+        return (
+          <Dialog
+            open={!!liveDevice}
+            onClose={handleStopLiveStream}
+            maxWidth="lg"
+            fullWidth
+            PaperProps={{
+              sx: {
+                maxHeight: '95vh',
+                bgcolor: '#060a11',
+                border: isLiveDeviceRecording
+                  ? '1px solid rgba(255, 23, 68, 0.45)'
+                  : '1px solid rgba(0, 229, 255, 0.3)',
+                boxShadow: isLiveDeviceRecording
+                  ? '0 0 40px rgba(255, 23, 68, 0.2)'
+                  : '0 0 40px rgba(0, 229, 255, 0.15)',
+                borderRadius: 3,
+              }
+            }}
+          >
+            {/* Live Modal Header */}
+            <Box sx={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              p: 2, borderBottom: '1px solid rgba(255,255,255,0.08)', flexWrap: 'wrap', gap: 1.5,
+            }}>
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.3 }}>
+                  <Box sx={{
+                    display: 'flex', alignItems: 'center', gap: 0.6, px: 1, py: 0.3, borderRadius: 1,
+                    bgcolor: isLiveDeviceRecording ? 'rgba(255,23,68,0.2)' : 'rgba(0,229,255,0.12)',
+                    border: isLiveDeviceRecording ? '1px solid rgba(255,23,68,0.5)' : '1px solid rgba(0,229,255,0.3)',
+                  }}>
+                    <Box sx={{
+                      width: 7, height: 7, borderRadius: '50%',
+                      bgcolor: isLiveDeviceRecording ? '#ff1744' : '#00e5ff',
+                      animation: 'pulse-glow 1s ease-in-out infinite',
+                    }} />
+                    <Typography sx={{
+                      fontSize: 10, fontFamily: 'monospace', fontWeight: 700,
+                      color: isLiveDeviceRecording ? '#ff5252' : '#00e5ff', letterSpacing: '0.1em',
+                    }}>
+                      {isLiveDeviceRecording ? 'RECORDING TO DRIVE • LIVE PREVIEW' : 'LIVE SURVEILLANCE FEED'}
+                    </Typography>
+                  </Box>
                 </Box>
-              </Box>
-              <Typography sx={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{liveDevice.deviceName || liveDevice.model}</Typography>
-              <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.3 }}>
-                <Typography sx={{ fontSize: 10.5, fontFamily: 'monospace', color: '#64748b' }}>ID: {liveDevice.deviceId}</Typography>
-                <Typography sx={{ fontSize: 10.5, fontFamily: 'monospace', color: '#00e5ff', fontWeight: 600 }}>LENS: {liveLens}</Typography>
-                <Typography sx={{ fontSize: 10.5, fontFamily: 'monospace', color: liveFps > 0 ? '#00e676' : '#f59e0b', fontWeight: 600 }}>
-                  {liveFps > 0 ? `${liveFps} FPS` : 'Buffering...'}
+                <Typography sx={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>
+                  {liveDevice.deviceName || liveDevice.model}
                 </Typography>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 0.3 }}>
+                  <Typography sx={{ fontSize: 10.5, fontFamily: 'monospace', color: '#64748b' }}>ID: {liveDevice.deviceId}</Typography>
+                  <Typography sx={{ fontSize: 10.5, fontFamily: 'monospace', color: '#00e5ff', fontWeight: 600 }}>LENS: {liveLens}</Typography>
+                  <Typography sx={{ fontSize: 10.5, fontFamily: 'monospace', color: liveFps > 0 ? '#00e676' : '#f59e0b', fontWeight: 600 }}>
+                    {liveFps > 0 ? `${liveFps} FPS` : 'Buffering...'}
+                  </Typography>
+                  {isLiveDeviceRecording && (
+                    <Chip
+                      label="SAVING TO DRIVE"
+                      size="small"
+                      sx={{
+                        height: 16,
+                        fontSize: 9,
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        bgcolor: 'rgba(255,23,68,0.2)',
+                        color: '#ff5252',
+                        border: '1px solid rgba(255,23,68,0.4)',
+                        borderRadius: 1,
+                      }}
+                    />
+                  )}
+                </Stack>
+              </Box>
+
+              <Stack direction="row" spacing={0.8} flexWrap="wrap">
+                {/* Record Toggle Button in Live Surveillance */}
+                <Button
+                  size="small"
+                  onClick={handleToggleRecordingFromLive}
+                  startIcon={
+                    isLiveDeviceRecording ? (
+                      <Box
+                        sx={{
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          bgcolor: '#fff',
+                          boxShadow: '0 0 6px #fff',
+                          animation: 'pulse-glow 1s ease-in-out infinite',
+                        }}
+                      />
+                    ) : (
+                      <Video size={13} />
+                    )
+                  }
+                  variant={isLiveDeviceRecording ? 'contained' : 'outlined'}
+                  sx={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: isLiveDeviceRecording ? '#fff' : '#ff5252',
+                    bgcolor: isLiveDeviceRecording ? 'rgba(255, 23, 68, 0.9)' : 'rgba(255, 23, 68, 0.08)',
+                    borderColor: isLiveDeviceRecording ? '#ff1744' : 'rgba(255, 23, 68, 0.4)',
+                    boxShadow: isLiveDeviceRecording ? '0 0 14px rgba(255, 23, 68, 0.5)' : 'none',
+                    '&:hover': {
+                      bgcolor: isLiveDeviceRecording ? '#ff1744' : 'rgba(255, 23, 68, 0.18)',
+                      borderColor: '#ff1744',
+                    },
+                  }}
+                >
+                  {isLiveDeviceRecording ? 'Stop Recording' : 'Record Video'}
+                </Button>
+
+                <Button size="small" onClick={toggleAudioMute} startIcon={isAudioMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                  variant="outlined" sx={{ fontSize: 11, color: isAudioMuted ? '#94a3b8' : '#00e676', borderColor: isAudioMuted ? 'rgba(255,255,255,0.1)' : 'rgba(0,230,118,0.35)', '&:hover': { bgcolor: 'rgba(0,230,118,0.06)' } }}>
+                  {isAudioMuted ? 'Unmute' : 'Audio Live'}
+                </Button>
+                <Button size="small" onClick={handleSwitchCamera} startIcon={<RefreshCw size={13} />}
+                  variant="outlined" sx={{ fontSize: 11, color: '#94a3b8', borderColor: 'rgba(255,255,255,0.1)', '&:hover': { color: '#00e5ff', borderColor: 'rgba(0,229,255,0.3)' } }}>
+                  Switch Lens
+                </Button>
+                <Button size="small" onClick={handleTakeSnapshot} disabled={!liveFrame} startIcon={<Download size={13} />}
+                  variant="outlined" sx={{ fontSize: 11, color: '#94a3b8', borderColor: 'rgba(255,255,255,0.1)' }}>
+                  Snapshot
+                </Button>
+                <IconButton onClick={handleStopLiveStream} size="small" sx={{ color: '#64748b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 1.5, '&:hover': { color: '#ff616f', borderColor: 'rgba(255,23,68,0.3)' } }}>
+                  <CloseIcon fontSize="small" />
+                </IconButton>
               </Stack>
             </Box>
 
-            <Stack direction="row" spacing={0.8} flexWrap="wrap">
-              <Button size="small" onClick={toggleAudioMute} startIcon={isAudioMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                variant="outlined" sx={{ fontSize: 11, color: isAudioMuted ? '#94a3b8' : '#00e676', borderColor: isAudioMuted ? 'rgba(255,255,255,0.1)' : 'rgba(0,230,118,0.35)', '&:hover': { bgcolor: 'rgba(0,230,118,0.06)' } }}>
-                {isAudioMuted ? 'Unmute' : 'Audio Live'}
-              </Button>
-              <Button size="small" onClick={handleSwitchCamera} startIcon={<RefreshCw size={13} />}
-                variant="outlined" sx={{ fontSize: 11, color: '#94a3b8', borderColor: 'rgba(255,255,255,0.1)', '&:hover': { color: '#00e5ff', borderColor: 'rgba(0,229,255,0.3)' } }}>
-                Switch Lens
-              </Button>
-              <Button size="small" onClick={handleTakeSnapshot} disabled={!liveFrame} startIcon={<Download size={13} />}
-                variant="outlined" sx={{ fontSize: 11, color: '#94a3b8', borderColor: 'rgba(255,255,255,0.1)' }}>
-                Snapshot
-              </Button>
-              <IconButton onClick={handleStopLiveStream} size="small" sx={{ color: '#64748b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 1.5, '&:hover': { color: '#ff616f', borderColor: 'rgba(255,23,68,0.3)' } }}>
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Stack>
-          </Box>
+            {/* Live Feed Viewport */}
+            <Box className="cctv-viewport" sx={{ position: 'relative', aspectRatio: '16/9', bgcolor: '#000', flex: 1 }}>
+              <div className="cctv-bracket-tl" />
+              <div className="cctv-bracket-tr" />
+              <div className="cctv-bracket-bl" />
+              <div className="cctv-bracket-br" />
 
-          {/* Live Feed Viewport */}
-          <Box className="cctv-viewport" sx={{ position: 'relative', aspectRatio: '16/9', bgcolor: '#000', flex: 1 }}>
-            <div className="cctv-bracket-tl" />
-            <div className="cctv-bracket-tr" />
-            <div className="cctv-bracket-bl" />
-            <div className="cctv-bracket-br" />
-
-            {liveFrame ? (
-              <>
-                <Box component="img" src={liveFrame} alt="Live Camera Feed"
-                  sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', position: 'relative', zIndex: 2 }} />
-                {/* HUD Overlay */}
-                <Box sx={{ position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none', fontFamily: 'monospace' }}>
-                  <Box sx={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 0.7 }}>
-                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#ff1744', animation: 'pulse-glow 1s ease-in-out infinite' }} />
-                    <Typography sx={{ fontSize: 10, fontFamily: 'monospace', color: '#ff616f', fontWeight: 700 }}>REC • {liveLens} CAM</Typography>
+              {liveFrame ? (
+                <>
+                  <Box component="img" src={liveFrame} alt="Live Camera Feed"
+                    sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', position: 'relative', zIndex: 2 }} />
+                  {/* HUD Overlay */}
+                  <Box sx={{ position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none', fontFamily: 'monospace' }}>
+                    <Box sx={{ position: 'absolute', top: 12, left: 12, display: 'flex', alignItems: 'center', gap: 0.7 }}>
+                      <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: isLiveDeviceRecording ? '#ff1744' : '#00e5ff', animation: 'pulse-glow 1s ease-in-out infinite' }} />
+                      <Typography sx={{ fontSize: 10, fontFamily: 'monospace', color: isLiveDeviceRecording ? '#ff616f' : '#00e5ff', fontWeight: 700 }}>
+                        {isLiveDeviceRecording ? 'REC TO DRIVE' : 'LIVE FEED'} • {liveLens} CAM
+                      </Typography>
+                    </Box>
+                    <Box sx={{ position: 'absolute', bottom: 12, right: 12 }}>
+                      <Typography sx={{ fontSize: 10, fontFamily: 'monospace', color: '#00e5ff' }}>{currentTime}</Typography>
+                    </Box>
                   </Box>
-                  <Box sx={{ position: 'absolute', bottom: 12, right: 12 }}>
-                    <Typography sx={{ fontSize: 10, fontFamily: 'monospace', color: '#00e5ff' }}>{currentTime}</Typography>
-                  </Box>
+                </>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 1 }}>
+                  <div className="live-radar-spinner" />
+                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
+                    Connecting to {liveDevice.deviceName}&apos;s camera...
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: '#64748b' }}>
+                    Silently streaming via WebSocket relay
+                  </Typography>
                 </Box>
-              </>
-            ) : (
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 1 }}>
-                <div className="live-radar-spinner" />
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
-                  Connecting to {liveDevice.deviceName}&apos;s camera...
-                </Typography>
-                <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: '#64748b' }}>
-                  Silently streaming via WebSocket relay
-                </Typography>
-              </Box>
-            )}
-          </Box>
-
-          {/* Live Modal Footer */}
-          <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Info size={14} color="#00e5ff" />
-              <Typography sx={{ fontSize: 11.5, color: '#64748b' }}>Live via WebSocket. Zero cloud bandwidth stored on server.</Typography>
+              )}
             </Box>
-            <Button onClick={handleStopLiveStream} variant="outlined" size="small"
-              sx={{ fontSize: 12, color: '#ff616f', borderColor: 'rgba(255,23,68,0.3)', '&:hover': { bgcolor: 'rgba(255,23,68,0.08)' } }}>
-              End Live View
-            </Button>
-          </Box>
-        </Dialog>
-      )}
+
+            {/* Live Modal Footer */}
+            <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Info size={14} color="#00e5ff" />
+                <Typography sx={{ fontSize: 11.5, color: '#64748b' }}>Live via WebSocket. Zero cloud bandwidth stored on server.</Typography>
+              </Box>
+              <Button onClick={handleStopLiveStream} variant="outlined" size="small"
+                sx={{ fontSize: 12, color: '#ff616f', borderColor: 'rgba(255,23,68,0.3)', '&:hover': { bgcolor: 'rgba(255,23,68,0.08)' } }}>
+                End Live View
+              </Button>
+            </Box>
+          </Dialog>
+        );
+      })()}
+
+      {/* Camera Selection Modal (Front vs Back) */}
+      <CameraSelectModal />
     </Box>
   );
 }

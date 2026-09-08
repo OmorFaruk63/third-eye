@@ -59,6 +59,18 @@ const DeviceSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  villageOrPara: {
+    type: String,
+    default: '',
+  },
+  districtAndCountry: {
+    type: String,
+    default: '',
+  },
+  locationUpdatedAt: {
+    type: Date,
+    default: Date.now,
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Device', DeviceSchema);

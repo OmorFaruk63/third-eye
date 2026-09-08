@@ -10,10 +10,13 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.util.Size
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Quality
@@ -37,7 +40,10 @@ import com.thirdeye.app.utils.StorageUtil
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 class CameraRecordingService : LifecycleService() {
 
@@ -51,6 +57,7 @@ class CameraRecordingService : LifecycleService() {
         const val ACTION_RECORDING_STATUS_CHANGED = "com.thirdeye.app.STATUS_CHANGED"
         const val EXTRA_IS_RECORDING = "extra_is_recording"
         const val EXTRA_ENABLE_VIBRATION = "extra_enable_vibration"
+        const val EXTRA_CAMERA_LENS = "extra_camera_lens"
 
         @Volatile
         var isServiceRunning = false
@@ -58,10 +65,13 @@ class CameraRecordingService : LifecycleService() {
         @Volatile
         var isStopping = false
 
-        fun startService(context: Context, enableVibration: Boolean = false) {
+        fun startService(context: Context, enableVibration: Boolean = false, cameraLens: String? = null) {
             val intent = Intent(context, CameraRecordingService::class.java).apply {
                 action = ACTION_START_RECORDING
                 putExtra(EXTRA_ENABLE_VIBRATION, enableVibration)
+                if (cameraLens != null) {
+                    putExtra(EXTRA_CAMERA_LENS, cameraLens)
+                }
             }
             ContextCompat.startForegroundService(context, intent)
         }
@@ -81,6 +91,10 @@ class CameraRecordingService : LifecycleService() {
     private var shouldVibrate: Boolean = false
     private lateinit var prefs: AppPreferences
 
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var cameraExecutor: ExecutorService? = null
+    private var lastFrameTime = 0L
+
     private val batteryReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_BATTERY_LOW) {
@@ -94,6 +108,7 @@ class CameraRecordingService : LifecycleService() {
         super.onCreate()
         isServiceRunning = true
         prefs = AppPreferences(this)
+        cameraExecutor = Executors.newSingleThreadExecutor()
         createSilentNotificationChannel()
 
         val filter = IntentFilter(Intent.ACTION_BATTERY_LOW)
@@ -106,6 +121,11 @@ class CameraRecordingService : LifecycleService() {
         when (intent?.action) {
             ACTION_START_RECORDING -> {
                 shouldVibrate = intent.getBooleanExtra(EXTRA_ENABLE_VIBRATION, false)
+                val overrideLens = intent.getStringExtra(EXTRA_CAMERA_LENS)
+                if (!overrideLens.isNullOrEmpty()) {
+                    prefs.cameraLens = overrideLens.uppercase()
+                    Log.i(TAG, "Override camera lens set to: ${prefs.cameraLens}")
+                }
                 if (activeRecording == null && !prefs.isRecording && !isStopping) {
                     startForegroundWithNotification()
                     initAndStartCameraRecording()
@@ -197,8 +217,8 @@ class CameraRecordingService : LifecycleService() {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
             try {
-                val cameraProvider = cameraProviderFuture.get()
-                bindRecordingUseCase(cameraProvider)
+                val provider = cameraProviderFuture.get()
+                bindRecordingUseCase(provider)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to get camera provider", e)
                 prefs.isRecording = false
@@ -212,8 +232,9 @@ class CameraRecordingService : LifecycleService() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun bindRecordingUseCase(cameraProvider: ProcessCameraProvider) {
-        cameraProvider.unbindAll()
+    private fun bindRecordingUseCase(provider: ProcessCameraProvider) {
+        this.cameraProvider = provider
+        provider.unbindAll()
 
         val lensFacing = if (prefs.cameraLens == "FRONT") {
             CameraSelector.LENS_FACING_FRONT
@@ -251,9 +272,35 @@ class CameraRecordingService : LifecycleService() {
 
         val videoCapture = VideoCapture.withOutput(recorder)
 
+        // Simultaneous Live Image Analysis for live surveillance preview
+        val imageAnalysis = ImageAnalysis.Builder()
+            .setTargetResolution(Size(640, 480))
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .build()
+
+        val executor = cameraExecutor ?: Executors.newSingleThreadExecutor().also { cameraExecutor = it }
+
+        imageAnalysis.setAnalyzer(executor) { imageProxy ->
+            val now = System.currentTimeMillis()
+            // Rate-limit to approx 15 FPS (every 65ms) to keep bandwidth minimal
+            if (now - lastFrameTime >= 65) {
+                lastFrameTime = now
+                try {
+                    val bitmap = imageProxy.toBitmap()
+                    val out = ByteArrayOutputStream()
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, out)
+                    val jpegBytes = out.toByteArray()
+                    SocketManager.sendFrame(applicationContext, jpegBytes)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Frame conversion error in recording service: ${e.message}")
+                }
+            }
+            imageProxy.close()
+        }
+
         try {
-            // Bind video capture to service lifecycle (without any UI preview required)
-            cameraProvider.bindToLifecycle(this, cameraSelector, videoCapture)
+            // Bind both video capture and live image analysis to service lifecycle
+            provider.bindToLifecycle(this, cameraSelector, videoCapture, imageAnalysis)
 
             currentOutputFile = StorageUtil.createOutputFile(this)
             val fileOutputOptions = FileOutputOptions.Builder(currentOutputFile!!).build()
@@ -265,7 +312,7 @@ class CameraRecordingService : LifecycleService() {
             activeRecording = pendingRecording.start(ContextCompat.getMainExecutor(this)) { recordEvent ->
                 when (recordEvent) {
                     is VideoRecordEvent.Start -> {
-                        Log.i(TAG, "Video recording started.")
+                        Log.i(TAG, "Video recording & simultaneous live stream started.")
                         prefs.isRecording = true
                         isStopping = false
                         if (shouldVibrate) {
@@ -403,6 +450,14 @@ class CameraRecordingService : LifecycleService() {
             // Ignored
         }
         activeRecording = null
+        try {
+            cameraProvider?.unbindAll()
+            cameraProvider = null
+        } catch (e: Exception) {
+            // Ignored
+        }
+        cameraExecutor?.shutdown()
+        cameraExecutor = null
         prefs.isRecording = false
         isServiceRunning = false
         isStopping = false
