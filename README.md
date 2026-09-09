@@ -14,14 +14,14 @@ Get the latest version of the **Third Eye** client app directly on your Android 
 
 | Action | Link | Description |
 | :--- | :--- | :--- |
-| 🚀 **Direct Download** | [**Download ThirdEye APK (`ThirdEye-v1.0.0.apk`)**](https://github.com/OmorFaruk63/third-eye/releases/latest/download/ThirdEye-v1.0.0.apk) | Latest production build APK |
+| 🚀 **Direct Download** | [**Download ThirdEye APK (`app-prod-release.apk`)**](https://github.com/OmorFaruk63/third-eye/releases/latest/download/app-prod-release.apk) | Latest production build APK |
 | 📦 **All Releases** | [**GitHub Releases Page**](https://github.com/OmorFaruk63/third-eye/releases) | View changelogs, versions, and assets |
 
 ---
 
 ### 📲 Quick Installation Guide (Android)
 
-1. **Download APK**: Tap on [Download ThirdEye APK](https://github.com/OmorFaruk63/third-eye/releases/latest/download/ThirdEye-v1.0.0.apk) using your mobile browser (Chrome, Samsung Internet, etc.).
+1. **Download APK**: Tap on [Download ThirdEye APK](https://github.com/OmorFaruk63/third-eye/releases/latest/download/app-prod-release.apk) using your mobile browser (Chrome, Samsung Internet, etc.).
 2. **Allow Unknown Sources**: When prompted by Android, enable **"Allow from this source"** for your browser to proceed with the installation.
 3. **Install & Launch**: Tap **Install** and open **Third Eye**.
 4. **Grant Required Permissions**:
