@@ -31,7 +31,19 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putString(KEY_DISGUISE_PIN, value).apply()
 
     var serverUrl: String
-        get() = prefs.getString(KEY_SERVER_URL, com.thirdeye.app.BuildConfig.DEFAULT_SERVER_URL) ?: com.thirdeye.app.BuildConfig.DEFAULT_SERVER_URL
+        get() {
+            val saved = prefs.getString(KEY_SERVER_URL, null)
+            if (saved.isNullOrEmpty()) {
+                return com.thirdeye.app.BuildConfig.DEFAULT_SERVER_URL
+            }
+            // If in DEV flavor but saved URL is outdated, auto-migrate to local dev URL
+            if (com.thirdeye.app.BuildConfig.IS_DEV_ENVIRONMENT && (saved.contains("onrender.com") || saved.contains("192.168.10.196"))) {
+                val devUrl = com.thirdeye.app.BuildConfig.DEFAULT_SERVER_URL
+                serverUrl = devUrl
+                return devUrl
+            }
+            return saved
+        }
         set(value) = prefs.edit().putString(KEY_SERVER_URL, value).apply()
 
     var cameraLens: String

@@ -44,7 +44,7 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
             manifestPlaceholders["appName"] = "Third Eye [DEV]"
-            buildConfigField("String", "DEFAULT_SERVER_URL", "\"http://192.168.10.196:5000\"")
+            buildConfigField("String", "DEFAULT_SERVER_URL", "\"http://192.168.10.120:5000\"")
             buildConfigField("String", "ENV_LABEL", "\"DEV / UAT\"")
             buildConfigField("Boolean", "IS_DEV_ENVIRONMENT", "true")
         }

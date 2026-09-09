@@ -13,11 +13,9 @@ export const IS_LOCAL_DEV =
     window.location.hostname === "127.0.0.1" ||
     window.location.hostname.startsWith("192.168."));
 
-export const API_BASE_URL =
-  import.meta.env.VITE_API_URL ||
-  (IS_LOCAL_DEV
-    ? "http://localhost:5000"
-    : "https://third-eye-backend-a319.onrender.com");
+export const API_BASE_URL = IS_LOCAL_DEV
+  ? "http://localhost:5000"
+  : (import.meta.env.VITE_PROD_API_URL || import.meta.env.VITE_API_URL || "https://third-eye-backend-a319.onrender.com");
 
 const DashboardContext = createContext(null);
 
@@ -39,6 +37,61 @@ export function DashboardProvider({ children }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRecordings, setSelectedRecordings] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Device Details & History Modal State
+  const [selectedDeviceDetails, setSelectedDeviceDetails] = useState(null);
+  const [isDeviceDetailsOpen, setIsDeviceDetailsOpen] = useState(false);
+  const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
+  const [locationRefreshStatus, setLocationRefreshStatus] = useState(null); // null | 'requesting' | 'success' | 'timeout'
+
+  const handleOpenDeviceDetails = async (deviceOrId) => {
+    const deviceId = typeof deviceOrId === 'string' ? deviceOrId : deviceOrId?.deviceId;
+    if (!deviceId) return;
+
+    const localDev = devices.find((d) => d.deviceId === deviceId) || (typeof deviceOrId === 'object' ? deviceOrId : null);
+    if (localDev) {
+      setSelectedDeviceDetails(localDev);
+    }
+    setIsDeviceDetailsOpen(true);
+    setLocationRefreshStatus(null);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/devices/${deviceId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.device) {
+          setSelectedDeviceDetails(data.device);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed fetching detailed device info:", e);
+    }
+  };
+
+  const handleCloseDeviceDetails = () => {
+    setIsDeviceDetailsOpen(false);
+    setSelectedDeviceDetails(null);
+    setIsRefreshingLocation(false);
+    setLocationRefreshStatus(null);
+  };
+
+  const handleRequestDeviceLocation = (deviceId) => {
+    if (!deviceId || !socket) return;
+    setIsRefreshingLocation(true);
+    setLocationRefreshStatus('requesting');
+    console.log(`🛰️ Sending live GPS refresh request for: ${deviceId}`);
+    socket.emit('request-device-location', { deviceId });
+
+    setTimeout(() => {
+      setIsRefreshingLocation((prev) => {
+        if (prev) {
+          setLocationRefreshStatus('timeout');
+          return false;
+        }
+        return false;
+      });
+    }, 15000);
+  };
 
   // Live Camera Surveillance State
   const [socket, setSocket] = useState(null);
@@ -256,7 +309,7 @@ export function DashboardProvider({ children }) {
       },
     );
 
-    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry, locationUpdatedAt }) => {
+    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry, locationUpdatedAt, accuracy, source, newLocationEntry }) => {
       setOnlineSocketDevices((prev) => {
         const next = new Set(prev);
         next.add(deviceId);
@@ -280,6 +333,33 @@ export function DashboardProvider({ children }) {
             : d,
         ),
       );
+
+      // If this is the active device in the DeviceDetailsModal, update it in real time!
+      setSelectedDeviceDetails((current) => {
+        if (current && current.deviceId === deviceId) {
+          const updatedHistory = [...(current.locationHistory || [])];
+          if (newLocationEntry) {
+            updatedHistory.unshift(newLocationEntry);
+          }
+          return {
+            ...current,
+            lastSeen: lastSeen || new Date(),
+            ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+            ...(isRecording !== undefined ? { isRecording } : {}),
+            ...(latitude ? { latitude: Number(latitude) } : {}),
+            ...(longitude ? { longitude: Number(longitude) } : {}),
+            ...(locationName ? { locationName } : {}),
+            ...(villageOrPara ? { villageOrPara } : {}),
+            ...(districtAndCountry ? { districtAndCountry } : {}),
+            ...(locationUpdatedAt ? { locationUpdatedAt } : (latitude ? { locationUpdatedAt: new Date() } : {})),
+            locationHistory: updatedHistory,
+          };
+        }
+        return current;
+      });
+
+      setIsRefreshingLocation(false);
+      setLocationRefreshStatus('success');
     });
 
     s.on("device-recording-status", ({ deviceId, isRecording }) => {
@@ -492,17 +572,17 @@ export function DashboardProvider({ children }) {
       const res = await fetch(`${API_BASE_URL}/api/videos/batch-delete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videoIds: selectedRecordings }),
+        body: JSON.stringify({ ids: selectedRecordings, videoIds: selectedRecordings }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setRecordings((prev) =>
           prev.filter((r) => !selectedRecordings.includes(r._id)),
         );
         setSelectedRecordings([]);
         fetchData();
       } else {
-        alert(data.message || "Batch delete failed");
+        alert(data.error || data.message || "Batch delete failed");
       }
     } catch (err) {
       alert("Delete failed: " + err.message);
@@ -526,12 +606,12 @@ export function DashboardProvider({ children }) {
         method: "DELETE",
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         setRecordings([]);
         setSelectedRecordings([]);
         fetchData();
       } else {
-        alert(data.message || "Delete all failed");
+        alert(data.error || data.message || "Delete all failed");
       }
     } catch (err) {
       alert("Delete all failed: " + err.message);
@@ -552,10 +632,13 @@ export function DashboardProvider({ children }) {
       const res = await fetch(`${API_BASE_URL}/api/videos/${id}`, {
         method: "DELETE",
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setRecordings((prev) => prev.filter((r) => r._id !== id));
         setSelectedRecordings((prev) => prev.filter((item) => item !== id));
         fetchData();
+      } else {
+        alert(data.error || data.message || "Delete failed");
       }
     } catch (err) {
       alert("Delete failed: " + err.message);
@@ -679,6 +762,13 @@ export function DashboardProvider({ children }) {
         formatSize,
         formatDuration,
         formatTimeAgo,
+        selectedDeviceDetails,
+        isDeviceDetailsOpen,
+        isRefreshingLocation,
+        locationRefreshStatus,
+        handleOpenDeviceDetails,
+        handleCloseDeviceDetails,
+        handleRequestDeviceLocation,
       }}
     >
       {children}

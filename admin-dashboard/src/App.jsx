@@ -6,6 +6,7 @@ import Overview from './pages/Overview';
 import Devices from './pages/Devices';
 import Recordings from './pages/Recordings';
 import Settings from './pages/Settings';
+import DeviceDetails from './pages/DeviceDetails';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
             <Route index element={<Overview />} />
             <Route path="overview" element={<Overview />} />
             <Route path="devices" element={<Devices />} />
+            <Route path="devices/:deviceId" element={<DeviceDetails />} />
             <Route path="recordings" element={<Recordings />} />
             <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />

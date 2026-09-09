@@ -210,9 +210,9 @@ router.delete('/all', async (req, res) => {
 // Admin: Batch delete multiple recordings by IDs
 router.post('/batch-delete', async (req, res) => {
   try {
-    const { ids } = req.body;
+    const ids = req.body.ids || req.body.videoIds;
     if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'ids array is required' });
+      return res.status(400).json({ error: 'ids or videoIds array is required' });
     }
 
     const recordings = await Recording.find({ _id: { $in: ids } });

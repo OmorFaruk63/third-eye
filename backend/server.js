@@ -169,12 +169,29 @@ io.on('connection', (socket) => {
       }
     }
 
-    trackDeviceSocket(deviceId, deviceName, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry);
+    const locUpdate = {};
+    if (latitude && longitude) {
+      const locEntry = {
+        latitude: Number(latitude),
+        longitude: Number(longitude),
+        locationName: locationName || '',
+        villageOrPara: villageOrPara || '',
+        districtAndCountry: districtAndCountry || '',
+        accuracy: data.accuracy || 10,
+        source: data.source || 'GPS',
+        timestamp: now,
+      };
+      locUpdate.$push = {
+        locationHistory: {
+          $each: [locEntry],
+          $slice: -100, // Keep latest 100 entries
+        }
+      };
+    }
 
     try {
-      await Device.findOneAndUpdate(
-        { deviceId },
-        {
+      const updateDoc = {
+        $set: {
           lastSeen: now,
           ...(batteryLevel !== undefined ? { batteryLevel } : {}),
           ...(isRecording !== undefined ? { isRecording: Boolean(isRecording) } : {}),
@@ -183,10 +200,13 @@ io.on('connection', (socket) => {
           ...(locationName ? { locationName } : {}),
           ...(villageOrPara ? { villageOrPara } : {}),
           ...(districtAndCountry ? { districtAndCountry } : {}),
-        }
-      );
+        },
+        ...locUpdate,
+      };
+
+      await Device.findOneAndUpdate({ deviceId }, updateDoc, { upsert: true });
     } catch (e) {
-      // ignore
+      console.error('Error updating device heartbeat:', e.message);
     }
 
     io.to('admins').emit('device-heartbeat', {
@@ -200,8 +220,27 @@ io.on('connection', (socket) => {
       villageOrPara: villageOrPara || undefined,
       districtAndCountry: districtAndCountry || undefined,
       locationUpdatedAt: latitude ? now : undefined,
+      accuracy: data.accuracy || 10,
+      source: data.source || 'GPS',
       isOnline: true,
+      newLocationEntry: latitude && longitude ? {
+        latitude: Number(latitude),
+        longitude: Number(longitude),
+        locationName: locationName || '',
+        villageOrPara: villageOrPara || '',
+        districtAndCountry: districtAndCountry || '',
+        accuracy: data.accuracy || 10,
+        source: data.source || 'GPS',
+        timestamp: now,
+      } : undefined,
     });
+  });
+
+  // Admin requests real-time GPS location refresh from phone
+  socket.on('request-device-location', ({ deviceId }) => {
+    console.log(`🛰️ Admin requested real-time GPS refresh for device: ${deviceId}`);
+    io.to(`device_${deviceId}`).emit('request-device-location', { deviceId });
+    io.to('devices').emit('request-device-location', { deviceId });
   });
 
   // Admin registration from React dashboard

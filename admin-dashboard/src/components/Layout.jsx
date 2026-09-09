@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { useDashboard, API_BASE_URL } from '../context/DashboardContext';
 import CameraSelectModal from './CameraSelectModal';
+import DeviceDetailsModal from './DeviceDetailsModal';
 
 import Box from '@mui/material/Box';
 import AppBar from '@mui/material/AppBar';
@@ -63,6 +64,13 @@ export default function Layout() {
   }, [liveDevice, selectedVideo, handleStopLiveStream, setSelectedVideo]);
 
   const getPageMeta = () => {
+    if (location.pathname.startsWith('/devices/')) {
+      return {
+        title: 'Device Telemetry & Location History',
+        desc: 'Comprehensive hardware telemetry and chronological movement timeline.',
+        badge: 'Unit Details',
+      };
+    }
     switch (location.pathname) {
       case '/devices':
         return {
@@ -726,6 +734,9 @@ export default function Layout() {
 
       {/* Camera Selection Modal (Front vs Back) */}
       <CameraSelectModal />
+
+      {/* Device Details & Location History Modal */}
+      <DeviceDetailsModal />
     </Box>
   );
 }

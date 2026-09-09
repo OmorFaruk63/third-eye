@@ -197,6 +197,39 @@ object SocketManager {
                 }
             }
 
+            // Command 6: Remote Request Live GPS Location Refresh
+            socket?.on("request-device-location") { args ->
+                try {
+                    val data = args.firstOrNull() as? JSONObject
+                    val targetDeviceId = data?.optString("deviceId")
+                    val myDeviceId = BackendClient.getDeviceId(context)
+                    if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
+                        return@on
+                    }
+                    Log.i(TAG, "📍 Received Remote GPS Refresh Request for: $myDeviceId")
+                    com.thirdeye.app.utils.LocationTracker.forceRefreshLocation(context) { freshLoc ->
+                        val payload = JSONObject().apply {
+                            put("deviceId", myDeviceId)
+                            put("deviceName", BackendClient.getDeviceName())
+                            put("batteryLevel", BackendClient.getBatteryLevel(context))
+                            put("isRecording", prefs.isRecording)
+                            put("timestamp", System.currentTimeMillis())
+                            put("latitude", freshLoc.latitude)
+                            put("longitude", freshLoc.longitude)
+                            put("locationName", freshLoc.fullAddress)
+                            put("villageOrPara", freshLoc.villageOrPara)
+                            put("districtAndCountry", freshLoc.districtAndCountry)
+                            put("accuracy", freshLoc.accuracy)
+                            put("source", "GPS")
+                        }
+                        socket?.emit("device-heartbeat", payload)
+                        Log.i(TAG, "📍 Emitted fresh GPS response: ${freshLoc.villageOrPara} (${freshLoc.latitude}, ${freshLoc.longitude})")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error handling request-device-location", e)
+                }
+            }
+
             socket?.connect()
             startHeartbeat(context)
         } catch (e: Exception) {

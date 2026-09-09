@@ -94,9 +94,31 @@ router.post('/ping', async (req, res) => {
       }
     }
 
+    const updateDoc = {
+      $set: updateFields,
+    };
+
+    if (updateFields.latitude && updateFields.longitude) {
+      updateDoc.$push = {
+        locationHistory: {
+          $each: [{
+            latitude: updateFields.latitude,
+            longitude: updateFields.longitude,
+            locationName: updateFields.locationName || '',
+            villageOrPara: updateFields.villageOrPara || '',
+            districtAndCountry: updateFields.districtAndCountry || '',
+            accuracy: req.body.accuracy || 10,
+            source: req.body.source || 'GPS',
+            timestamp: now,
+          }],
+          $slice: -100,
+        }
+      };
+    }
+
     const device = await Device.findOneAndUpdate(
       { deviceId },
-      updateFields,
+      updateDoc,
       { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
@@ -131,6 +153,20 @@ router.get('/', async (req, res) => {
     }
 
     res.json({ success: true, count: devices.length, devices });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin: Get specific device details including full locationHistory
+router.get('/:deviceId', async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+    const device = await Device.findOne({ deviceId });
+    if (!device) {
+      return res.status(404).json({ error: 'Device not found' });
+    }
+    res.json({ success: true, device });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

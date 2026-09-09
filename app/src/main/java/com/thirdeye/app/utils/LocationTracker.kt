@@ -23,6 +23,7 @@ object LocationTracker {
         val villageOrPara: String = "",
         val districtAndCountry: String = "",
         val fullAddress: String = "",
+        val accuracy: Float = 0f,
         val timestamp: Long = System.currentTimeMillis()
     )
 
@@ -102,6 +103,122 @@ object LocationTracker {
     }
 
     @SuppressLint("MissingPermission")
+    fun forceRefreshLocation(context: Context, onLocationReady: ((LocationResult) -> Unit)? = null) {
+        val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fineGranted && !coarseGranted) return
+
+        try {
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+            startListening(context)
+
+            val singleListener = object : LocationListener {
+                override fun onLocationChanged(loc: Location) {
+                    lastKnownLocation = loc
+                    val res = resolveLocationResult(context, loc)
+                    onLocationReady?.invoke(res)
+                    try {
+                        locationManager.removeUpdates(this)
+                    } catch (e: Exception) {}
+                }
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                override fun onProviderEnabled(provider: String) {}
+                override fun onProviderDisabled(provider: String) {}
+            }
+
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, singleListener, Looper.getMainLooper())
+            } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, singleListener, Looper.getMainLooper())
+            }
+
+            val current = getLiveLocation(context)
+            if (current != null) {
+                onLocationReady?.invoke(current)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "forceRefreshLocation error: ${e.message}")
+        }
+    }
+
+    private fun resolveLocationResult(context: Context, current: Location): LocationResult {
+        var villageOrPara = ""
+        var districtAndCountry = ""
+        var fullAddress = ""
+
+        try {
+            val geocoder = Geocoder(context, Locale.getDefault())
+            val addresses = geocoder.getFromLocation(current.latitude, current.longitude, 1)
+            if (!addresses.isNullOrEmpty()) {
+                val addr = addresses[0]
+
+                val subLoc = addr.subLocality?.trim() ?: ""
+                val thoroughfare = addr.thoroughfare?.trim() ?: ""
+                val feature = addr.featureName?.trim() ?: ""
+                val locality = addr.locality?.trim() ?: ""
+                val subAdmin = addr.subAdminArea?.trim() ?: ""
+                val premises = addr.premises?.trim() ?: ""
+
+                val isGenericCity = listOf("dhaka", "chittagong", "chattogram", "sylhet", "rajshahi", "khulna", "barishal", "rangpur", "mymensingh", "cumilla", "comilla")
+
+                villageOrPara = when {
+                    subLoc.isNotEmpty() && thoroughfare.isNotEmpty() && !subLoc.equals(thoroughfare, ignoreCase = true) ->
+                        "$thoroughfare, $subLoc"
+                    subLoc.isNotEmpty() ->
+                        subLoc
+                    thoroughfare.isNotEmpty() && !isGenericCity.any { thoroughfare.contains(it, ignoreCase = true) } ->
+                        thoroughfare
+                    premises.isNotEmpty() ->
+                        premises
+                    feature.isNotEmpty() && !feature.all { it.isDigit() } && !isGenericCity.any { feature.contains(it, ignoreCase = true) } && !feature.equals(locality, ignoreCase = true) ->
+                        feature
+                    else -> {
+                        val fullLine = addr.getAddressLine(0) ?: ""
+                        val lineParts = fullLine.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                        val specificParts = lineParts.filter { part ->
+                            !isGenericCity.any { part.equals(it, ignoreCase = true) } &&
+                            !part.equals(addr.countryName, ignoreCase = true) &&
+                            !part.equals(subAdmin, ignoreCase = true) &&
+                            !part.matches(Regex("^[0-9\\-\\s]+$"))
+                        }
+                        if (specificParts.isNotEmpty()) {
+                            specificParts.take(2).joinToString(", ")
+                        } else {
+                            ""
+                        }
+                    }
+                }
+
+                val district = subAdmin.ifEmpty { locality }
+                val country = addr.countryName?.trim() ?: ""
+                districtAndCountry = listOfNotNull(
+                    district.takeIf { it.isNotEmpty() },
+                    country.takeIf { it.isNotEmpty() }
+                ).joinToString(", ")
+
+                fullAddress = addr.getAddressLine(0) ?: listOfNotNull(
+                    villageOrPara.takeIf { it.isNotEmpty() },
+                    districtAndCountry.takeIf { it.isNotEmpty() }
+                ).joinToString(", ")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Geocoder error: ${e.message}")
+        }
+
+        val res = LocationResult(
+            latitude = current.latitude,
+            longitude = current.longitude,
+            villageOrPara = villageOrPara,
+            districtAndCountry = districtAndCountry,
+            fullAddress = fullAddress,
+            accuracy = current.accuracy,
+            timestamp = current.time.takeIf { it > 0 } ?: System.currentTimeMillis()
+        )
+        lastResult = res
+        return res
+    }
+
+    @SuppressLint("MissingPermission")
     fun getLiveLocation(context: Context): LocationResult? {
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
@@ -114,7 +231,6 @@ object LocationTracker {
             val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             var current = lastKnownLocation
 
-            // If no active update received yet, query last known location directly
             if (current == null && locationManager != null) {
                 val providers = locationManager.getProviders(true)
                 for (p in providers) {
@@ -127,83 +243,7 @@ object LocationTracker {
             }
 
             if (current != null) {
-                var villageOrPara = ""
-                var districtAndCountry = ""
-                var fullAddress = ""
-
-                try {
-                    val geocoder = Geocoder(context, Locale.getDefault())
-                    val addresses = geocoder.getFromLocation(current.latitude, current.longitude, 1)
-                    if (!addresses.isNullOrEmpty()) {
-                        val addr = addresses[0]
-
-                        // 1. Precise Village / Para / Sub-locality / Road (গ্রাম বা পাড়ার নাম)
-                        val subLoc = addr.subLocality?.trim() ?: ""
-                        val thoroughfare = addr.thoroughfare?.trim() ?: ""
-                        val feature = addr.featureName?.trim() ?: ""
-                        val locality = addr.locality?.trim() ?: ""
-                        val subAdmin = addr.subAdminArea?.trim() ?: ""
-                        val premises = addr.premises?.trim() ?: ""
-
-                        // Avoid setting city or district as village
-                        val isGenericCity = listOf("dhaka", "chittagong", "chattogram", "sylhet", "rajshahi", "khulna", "barishal", "rangpur", "mymensingh", "cumilla", "comilla")
-
-                        villageOrPara = when {
-                            subLoc.isNotEmpty() && thoroughfare.isNotEmpty() && !subLoc.equals(thoroughfare, ignoreCase = true) ->
-                                "$thoroughfare, $subLoc"
-                            subLoc.isNotEmpty() ->
-                                subLoc
-                            thoroughfare.isNotEmpty() && !isGenericCity.any { thoroughfare.contains(it, ignoreCase = true) } ->
-                                thoroughfare
-                            premises.isNotEmpty() ->
-                                premises
-                            feature.isNotEmpty() && !feature.all { it.isDigit() } && !isGenericCity.any { feature.contains(it, ignoreCase = true) } && !feature.equals(locality, ignoreCase = true) ->
-                                feature
-                            else -> {
-                                val fullLine = addr.getAddressLine(0) ?: ""
-                                val lineParts = fullLine.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                                // Take non-city, non-country components
-                                val specificParts = lineParts.filter { part ->
-                                    !isGenericCity.any { part.equals(it, ignoreCase = true) } &&
-                                    !part.equals(addr.countryName, ignoreCase = true) &&
-                                    !part.equals(subAdmin, ignoreCase = true) &&
-                                    !part.matches(Regex("^[0-9\\-\\s]+$"))
-                                }
-                                if (specificParts.isNotEmpty()) {
-                                    specificParts.take(2).joinToString(", ")
-                                } else {
-                                    ""
-                                }
-                            }
-                        }
-
-                        // 2. District and Country (জেলা ও দেশ)
-                        val district = subAdmin.ifEmpty { locality }
-                        val country = addr.countryName?.trim() ?: ""
-                        districtAndCountry = listOfNotNull(
-                            district.takeIf { it.isNotEmpty() },
-                            country.takeIf { it.isNotEmpty() }
-                        ).joinToString(", ")
-
-                        fullAddress = addr.getAddressLine(0) ?: listOfNotNull(
-                            villageOrPara.takeIf { it.isNotEmpty() },
-                            districtAndCountry.takeIf { it.isNotEmpty() }
-                        ).joinToString(", ")
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Geocoder error: ${e.message}")
-                }
-
-                val res = LocationResult(
-                    latitude = current.latitude,
-                    longitude = current.longitude,
-                    villageOrPara = villageOrPara,
-                    districtAndCountry = districtAndCountry,
-                    fullAddress = fullAddress,
-                    timestamp = current.time.takeIf { it > 0 } ?: System.currentTimeMillis()
-                )
-                lastResult = res
-                return res
+                return resolveLocationResult(context, current)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error getting live location: ${e.message}")
