@@ -7,9 +7,15 @@ import React, {
 } from "react";
 import { io } from "socket.io-client";
 
+export const IS_LOCAL_DEV =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname.startsWith("192.168."));
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
-  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+  (IS_LOCAL_DEV
     ? "http://localhost:5000"
     : "https://third-eye-backend-a319.onrender.com");
 
@@ -629,6 +635,8 @@ export function DashboardProvider({ children }) {
         recordings,
         loading,
         serverOnline,
+        isLocalDev: IS_LOCAL_DEV,
+        activeApiUrl: API_BASE_URL,
         autoRefresh,
         setAutoRefresh,
         selectedVideo,

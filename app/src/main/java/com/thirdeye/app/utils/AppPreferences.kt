@@ -31,7 +31,7 @@ class AppPreferences(context: Context) {
         set(value) = prefs.edit().putString(KEY_DISGUISE_PIN, value).apply()
 
     var serverUrl: String
-        get() = prefs.getString(KEY_SERVER_URL, "https://third-eye-backend-a319.onrender.com") ?: "https://third-eye-backend-a319.onrender.com"
+        get() = prefs.getString(KEY_SERVER_URL, com.thirdeye.app.BuildConfig.DEFAULT_SERVER_URL) ?: com.thirdeye.app.BuildConfig.DEFAULT_SERVER_URL
         set(value) = prefs.edit().putString(KEY_SERVER_URL, value).apply()
 
     var cameraLens: String

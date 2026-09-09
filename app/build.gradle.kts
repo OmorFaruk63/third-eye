@@ -26,6 +26,26 @@ android {
             )
         }
     }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("prod") {
+            dimension = "environment"
+            manifestPlaceholders["appName"] = "Third Eye"
+            buildConfigField("String", "DEFAULT_SERVER_URL", "\"https://third-eye-backend-a319.onrender.com\"")
+            buildConfigField("String", "ENV_LABEL", "\"PROD\"")
+            buildConfigField("Boolean", "IS_DEV_ENVIRONMENT", "false")
+        }
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            manifestPlaceholders["appName"] = "Third Eye [DEV]"
+            buildConfigField("String", "DEFAULT_SERVER_URL", "\"http://192.168.10.196:5000\"")
+            buildConfigField("String", "ENV_LABEL", "\"DEV / UAT\"")
+            buildConfigField("Boolean", "IS_DEV_ENVIRONMENT", "true")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -35,6 +55,7 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
     packaging {
         resources {

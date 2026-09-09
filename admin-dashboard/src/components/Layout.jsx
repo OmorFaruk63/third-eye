@@ -37,6 +37,7 @@ export default function Layout() {
 
   const {
     stats, devices, recordings, loading, serverOnline,
+    isLocalDev, activeApiUrl,
     autoRefresh, setAutoRefresh, selectedVideo, setSelectedVideo,
     liveDevice, liveFrame, liveLens, liveFps,
     isAudioMuted, liveOnlineCount, liveStreamError,
@@ -348,6 +349,25 @@ export default function Layout() {
             </Box>
 
             <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
+              {/* Environment Indicator (DEV vs LIVE) */}
+              <Chip
+                label={isLocalDev ? "LOCAL DEV" : "CLOUD LIVE"}
+                size="small"
+                sx={{
+                  display: { xs: 'none', sm: 'inline-flex' },
+                  height: 24,
+                  fontSize: 10,
+                  fontFamily: 'monospace',
+                  fontWeight: 700,
+                  letterSpacing: '0.06em',
+                  bgcolor: isLocalDev ? 'rgba(255, 171, 0, 0.15)' : 'rgba(0, 230, 118, 0.12)',
+                  color: isLocalDev ? '#ffab00' : '#00e676',
+                  border: isLocalDev ? '1px solid rgba(255, 171, 0, 0.4)' : '1px solid rgba(0, 230, 118, 0.3)',
+                  borderRadius: 1.5,
+                  '& .MuiChip-label': { px: 1 },
+                }}
+              />
+
               {/* Clock */}
               <Box sx={{
                 display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 0.8,
@@ -370,7 +390,7 @@ export default function Layout() {
                   boxShadow: `0 0 6px ${serverOnline ? '#00e676' : '#ff1744'}`,
                 }} />
                 <Typography sx={{ fontSize: 11.5, color: '#94a3b8', fontWeight: 500 }}>
-                  {serverOnline ? 'Relay Active' : 'Offline'}
+                  {serverOnline ? (isLocalDev ? 'Local Relay' : 'Relay Active') : 'Offline'}
                 </Typography>
               </Box>
 

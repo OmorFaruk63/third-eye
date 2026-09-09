@@ -175,6 +175,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateStatusBadges() {
+        // Environment badge (DEV / UAT vs PROD)
+        if (com.thirdeye.app.BuildConfig.IS_DEV_ENVIRONMENT) {
+            binding.tvEnvBadge.visibility = View.VISIBLE
+            binding.tvEnvBadge.text = com.thirdeye.app.BuildConfig.ENV_LABEL
+        } else {
+            binding.tvEnvBadge.visibility = View.GONE
+        }
+
         // Lens badge
         binding.tvLensBadge.text = "CAM: ${prefs.cameraLens} (${prefs.videoQuality})"
 
