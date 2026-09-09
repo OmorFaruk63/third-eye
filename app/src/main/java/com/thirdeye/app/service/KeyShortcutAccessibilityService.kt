@@ -13,7 +13,7 @@ class KeyShortcutAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "KeyAccessibility"
-        private const val MAX_CLICK_INTERVAL = 600L // 600ms window between consecutive clicks
+        private const val MAX_CLICK_INTERVAL = 900L // 900ms window between consecutive clicks (more forgiving for 3x clicks)
         private const val MIN_CLICK_INTERVAL = 50L // 50ms debounce for hardware jitter
         private const val TOGGLE_COOLDOWN = 1500L // 1.5s cooldown between toggles
     }
@@ -41,15 +41,14 @@ class KeyShortcutAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Checks if a phone call or media (movie, music, video) is currently active.
-     * Prevents accidental recording start/stop when adjusting volume during calls or movies.
+     * Checks if a phone call is currently active.
+     * Prevents accidental recording start/stop when adjusting volume during active phone calls.
      */
     private fun isCallOrMediaActive(): Boolean {
         return try {
             val audioManager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return false
-            val isCall = audioManager.mode != AudioManager.MODE_NORMAL
-            val isMedia = audioManager.isMusicActive
-            isCall || isMedia
+            // Only check if phone call is active (MODE_IN_CALL or MODE_IN_COMMUNICATION)
+            audioManager.mode != AudioManager.MODE_NORMAL
         } catch (e: Exception) {
             Log.e(TAG, "Error checking audio state", e)
             false
