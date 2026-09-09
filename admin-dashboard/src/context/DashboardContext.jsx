@@ -8,7 +8,10 @@ import React, {
 import { io } from "socket.io-client";
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "https://third-eye-backend-a319.onrender.com";
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "http://localhost:5000"
+    : "https://third-eye-backend-a319.onrender.com");
 
 const DashboardContext = createContext(null);
 
@@ -39,6 +42,7 @@ export function DashboardProvider({ children }) {
   const [liveLens, setLiveLens] = useState("BACK");
   const [liveFps, setLiveFps] = useState(0);
   const [isLiveConnecting, setIsLiveConnecting] = useState(false);
+  const [liveStreamError, setLiveStreamError] = useState(null);
   const frameCountRef = useRef(0);
 
   // Camera Selection Modal State (Record & Live Stream)
@@ -300,15 +304,16 @@ export function DashboardProvider({ children }) {
     });
 
     s.on("stream-error", (err) => {
-      alert(`Live stream error: ${err.error || "Device unavailable"}`);
+      console.warn("Live stream error from backend:", err);
+      setLiveStreamError(err?.error || "Device is currently unreachable or streaming unavailable.");
       setIsLiveConnecting(false);
-      setLiveDevice(null);
     });
 
     s.on("stream-ended", () => {
       setIsLiveConnecting(false);
       setLiveDevice(null);
       setLiveFrame(null);
+      setLiveStreamError(null);
     });
 
     setSocket(s);
@@ -330,6 +335,7 @@ export function DashboardProvider({ children }) {
     setLiveFrame(null);
     setLiveLens(camera);
     setIsLiveConnecting(true);
+    setLiveStreamError(null);
     isAudioMutedRef.current = false;
     setIsAudioMuted(false);
     initAudio();
@@ -400,6 +406,7 @@ export function DashboardProvider({ children }) {
     setLiveDevice(null);
     setLiveFrame(null);
     setIsLiveConnecting(false);
+    setLiveStreamError(null);
   };
 
   const handleSwitchCamera = () => {
@@ -637,6 +644,7 @@ export function DashboardProvider({ children }) {
         liveLens,
         liveFps,
         isLiveConnecting,
+        liveStreamError,
         isAudioMuted,
         audioLevel,
         liveOnlineCount,

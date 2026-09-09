@@ -124,7 +124,7 @@ class DeviceTelemetryService : Service() {
                     // Ensure socket is alive
                     if (!SocketManager.isConnected()) {
                         Log.d(TAG, "Socket disconnected, reconnecting...")
-                        SocketManager.initAndConnect(applicationContext)
+                        SocketManager.reconnect(applicationContext)
                     }
 
                     // Every 60 seconds (every 3rd cycle), send full HTTP ping to keep MongoDB lastSeen fresh

