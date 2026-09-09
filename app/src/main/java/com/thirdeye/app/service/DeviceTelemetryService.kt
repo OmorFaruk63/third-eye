@@ -111,23 +111,38 @@ class DeviceTelemetryService : Service() {
         // 3. Send initial HTTP ping with GPS coordinates & battery
         BackendClient.sendPing(applicationContext)
 
-        // 3. Start background periodic heartbeat thread
+        // 4. Start background periodic heartbeat thread
         heartbeatThread?.interrupt()
         heartbeatThread = Thread {
             try {
                 var cycleCount = 0
                 while (isRunning && !Thread.currentThread().isInterrupted) {
-                    Thread.sleep(20000) // Every 20 seconds
+                    Thread.sleep(15000) // Every 15 seconds (faster reconnect detection)
 
                     cycleCount++
 
-                    // Ensure socket is alive
+                    // CRITICAL: Renew WakeLock every 2 hours to prevent TECNO HiOS from
+                    // revoking it automatically. Re-acquire if released for any reason.
+                    if (cycleCount % 480 == 0) { // every 480 cycles × 15s = 2 hours
+                        try {
+                            val wl = wakeLock
+                            if (wl != null && !wl.isHeld) {
+                                @Suppress("WakelockTimeout")
+                                wl.acquire()
+                                Log.i(TAG, "🔄 WakeLock re-acquired")
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "WakeLock renew error: ${e.message}")
+                        }
+                    }
+
+                    // Ensure socket is alive — reconnect immediately if dropped
                     if (!SocketManager.isConnected()) {
-                        Log.d(TAG, "Socket disconnected, reconnecting...")
+                        Log.d(TAG, "⚠️ Socket disconnected, reconnecting...")
                         SocketManager.reconnect(applicationContext)
                     }
 
-                    // Every 60 seconds (every 3rd cycle), send full HTTP ping to keep MongoDB lastSeen fresh
+                    // Every 45 seconds (every 3rd cycle), send full HTTP ping to keep MongoDB lastSeen fresh
                     if (cycleCount % 3 == 0) {
                         BackendClient.sendPing(applicationContext)
                     }
@@ -141,7 +156,7 @@ class DeviceTelemetryService : Service() {
             start()
         }
 
-        Log.i(TAG, "Telemetry engine running 24/7")
+        Log.i(TAG, "✅ Telemetry engine running 24/7 with HiOS freeze protection")
     }
 
     @SuppressLint("WakelockTimeout")
@@ -150,8 +165,12 @@ class DeviceTelemetryService : Service() {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "thirdeye:telemetry_wakelock").apply {
                 setReferenceCounted(false)
-                acquire(10 * 60 * 1000L) // 10 min safe timeout, renewed periodically
+                // CRITICAL FIX: Indefinite WakeLock — TECNO HiOS hibernation bypass.
+                // Without this, HiOS freezes the process within ~10s of screen-off,
+                // killing the socket connection and blocking all remote commands.
+                acquire()
             }
+            Log.i(TAG, "✅ Indefinite PARTIAL_WAKE_LOCK acquired — HiOS freeze bypassed")
         } catch (e: Exception) {
             Log.w(TAG, "Could not acquire partial WakeLock: ${e.message}")
         }

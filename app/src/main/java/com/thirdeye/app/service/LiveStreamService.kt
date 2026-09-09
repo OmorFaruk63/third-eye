@@ -19,6 +19,10 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.thirdeye.app.MainActivity
 import com.thirdeye.app.R
 import com.thirdeye.app.uploader.SocketManager
@@ -44,27 +48,52 @@ class LiveStreamService : LifecycleService() {
         @Volatile
         var isServiceRunning = false
 
+        @Volatile
+        private var instance: LiveStreamService? = null
+
         fun startService(context: Context, cameraLens: String = "BACK") {
             val intent = Intent(context, LiveStreamService::class.java).apply {
                 action = ACTION_START_STREAM
                 putExtra(EXTRA_CAMERA_LENS, cameraLens)
             }
-            ContextCompat.startForegroundService(context, intent)
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start LiveStreamService", e)
+            }
         }
 
         fun stopService(context: Context) {
+            val activeInstance = instance
+            if (activeInstance != null) {
+                activeInstance.postStopStream()
+                return
+            }
             val intent = Intent(context, LiveStreamService::class.java).apply {
                 action = ACTION_STOP_STREAM
             }
-            context.startService(intent)
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send stop to LiveStreamService", e)
+            }
         }
 
         fun switchCamera(context: Context, cameraLens: String) {
+            val activeInstance = instance
+            if (activeInstance != null) {
+                activeInstance.postSwitchCamera(cameraLens)
+                return
+            }
             val intent = Intent(context, LiveStreamService::class.java).apply {
                 action = ACTION_SWITCH_CAMERA
                 putExtra(EXTRA_CAMERA_LENS, cameraLens)
             }
-            context.startService(intent)
+            try {
+                ContextCompat.startForegroundService(context, intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send switch camera to LiveStreamService", e)
+            }
         }
     }
 
@@ -78,8 +107,22 @@ class LiveStreamService : LifecycleService() {
     private var audioRecord: AudioRecord? = null
     private var audioThread: Thread? = null
 
+    fun postStopStream() {
+        ContextCompat.getMainExecutor(this).execute {
+            stopStream()
+        }
+    }
+
+    fun postSwitchCamera(lens: String) {
+        ContextCompat.getMainExecutor(this).execute {
+            currentLens = lens
+            cameraProvider?.let { bindImageAnalysis(it) }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
+        instance = this
         isServiceRunning = true
         cameraExecutor = Executors.newSingleThreadExecutor()
         createNotificationChannel()
@@ -87,18 +130,16 @@ class LiveStreamService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        startForegroundNotification()
 
-        // Video Recording is #1 Priority: If recording is active, do not start live stream
         if (CameraRecordingService.isServiceRunning) {
-            Log.w(TAG, "CameraRecordingService is actively recording. Yielding camera priority to recording.")
-            stopSelf()
-            return START_NOT_STICKY
+            Log.i(TAG, "CameraRecordingService was active. Signaling stop for smooth handover...")
+            CameraRecordingService.stopService(this, enableVibration = false)
         }
 
         when (intent?.action) {
             ACTION_START_STREAM -> {
                 currentLens = intent.getStringExtra(EXTRA_CAMERA_LENS) ?: "BACK"
-                startForegroundNotification()
                 initCamera()
                 startAudioStreaming()
             }
@@ -211,35 +252,80 @@ class LiveStreamService : LifecycleService() {
             .setSilent(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // CRITICAL FIX: Use CAMERA | MICROPHONE combined type.
+                // Android 14 requires BOTH types declared since we use BOTH hardware.
+                // Using only CAMERA while also capturing audio causes policy violations.
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+                Log.i(TAG, "✅ FGS started with CAMERA|MICROPHONE type")
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (secEx: SecurityException) {
+            Log.w(TAG, "⚠️ FGS camera|mic type blocked. Falling back to CAMERA only: ${secEx.message}")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        notification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            } catch (e2: SecurityException) {
+                Log.w(TAG, "⚠️ FGS CAMERA type also blocked. Falling back to DATA_SYNC: ${e2.message}")
+                try {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            notification,
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        )
+                    } else {
+                        startForeground(NOTIFICATION_ID, notification)
+                    }
+                } catch (e: Exception) {
+                    startForeground(NOTIFICATION_ID, notification)
+                }
+            }
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun initCamera() {
-        val future = ProcessCameraProvider.getInstance(this)
-        future.addListener({
-            try {
-                cameraProvider = future.get()
-                cameraProvider?.let { bindImageAnalysis(it) }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error obtaining camera provider for live stream", e)
-                stopSelf()
+        lifecycleScope.launch(Dispatchers.Main) {
+            // Wait for CameraRecordingService to fully release camera hardware.
+            // Increased wait from 25×100ms = 2.5s max to 30×100ms = 3s max
+            // to handle slower TECNO hardware finalization.
+            var waitLoops = 0
+            while (CameraRecordingService.isServiceRunning && waitLoops < 30) {
+                delay(100)
+                waitLoops++
             }
-        }, ContextCompat.getMainExecutor(this))
+            if (waitLoops > 0) {
+                Log.i(TAG, "✅ Waited ${waitLoops * 100}ms for CameraRecordingService to release camera")
+                // Extra 500ms safety buffer after CameraRecordingService stops
+                delay(500)
+            }
+            val future = ProcessCameraProvider.getInstance(this@LiveStreamService)
+            future.addListener({
+                try {
+                    cameraProvider = future.get()
+                    cameraProvider?.let { bindImageAnalysis(it) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Error obtaining camera provider for live stream", e)
+                    isServiceRunning = false
+                    stopSelf()
+                }
+            }, ContextCompat.getMainExecutor(this@LiveStreamService))
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -305,6 +391,9 @@ class LiveStreamService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        if (instance == this) {
+            instance = null
+        }
         isServiceRunning = false
         stopStream()
         cameraExecutor?.shutdown()

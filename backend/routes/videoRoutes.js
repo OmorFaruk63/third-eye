@@ -102,6 +102,19 @@ router.post('/upload', upload.single('video'), async (req, res) => {
       { upsert: true }
     );
 
+    // Real-time broadcast to connected admins dashboard
+    const io = req.app.get('io');
+    if (io) {
+      io.to('admins').emit('new-recording', recording);
+      io.to('admins').emit('device-status-change', {
+        deviceId,
+        isOnline: true,
+        isRecording: false,
+        totalRecordings: (await Recording.countDocuments({ deviceId })),
+      });
+      io.to('admins').emit('device-recording-status', { deviceId, isRecording: false });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Video uploaded successfully',

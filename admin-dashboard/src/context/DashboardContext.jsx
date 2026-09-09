@@ -375,6 +375,13 @@ export function DashboardProvider({ children }) {
       );
     });
 
+    s.on("new-recording", (newRec) => {
+      if (newRec) {
+        setRecordings((prev) => [newRec, ...prev.filter((r) => r._id !== newRec._id)]);
+        setStats((prev) => (prev ? { ...prev, totalRecordings: (prev.totalRecordings || 0) + 1 } : prev));
+      }
+    });
+
     s.on("live-frame", (data) => {
       if (data && data.frame) {
         setLiveFrame(`data:image/jpeg;base64,${data.frame}`);

