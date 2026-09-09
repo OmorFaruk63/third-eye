@@ -45,6 +45,15 @@
             </intent-filter>
         </activity>
 
+        <!-- Stealth Transparent Activity for Android 14 FGS Camera Elevation -->
+        <activity
+            android:name=".service.StealthActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleInstance" />
+
 
         <!-- Background Camera Recording Foreground Service -->
         <service

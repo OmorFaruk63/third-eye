@@ -14,6 +14,7 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.thirdeye.app.service.CameraRecordingService
 import com.thirdeye.app.utils.AppPreferences
 import org.json.JSONObject
 import java.io.File
@@ -96,8 +97,9 @@ object BackendClient {
                     put("model", Build.MODEL)
                     put("androidVersion", Build.VERSION.RELEASE)
                     put("batteryLevel", getBatteryLevel(context))
-                    put("isRecording", prefs.isRecording)
+                    put("isRecording", CameraRecordingService.isServiceRunning || prefs.isRecording)
                     put("videoQuality", prefs.videoQuality)
+                    put("cameraLens", prefs.cameraLens)
                     put("appVersion", "1.0")
                     if (loc != null) {
                         put("latitude", loc.latitude)

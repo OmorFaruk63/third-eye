@@ -19,6 +19,9 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioTrack
 import com.thirdeye.app.MainActivity
 import com.thirdeye.app.R
 import com.thirdeye.app.uploader.BackendClient
@@ -72,6 +75,8 @@ class DeviceTelemetryService : Service() {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var heartbeatThread: Thread? = null
     private var isRunning = false
+    private var silentAudioTrack: AudioTrack? = null
+    private var silentAudioThread: Thread? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -101,6 +106,9 @@ class DeviceTelemetryService : Service() {
     private fun startTelemetryEngine() {
         if (isRunning) return
         isRunning = true
+
+        // 0. Start silent audio keeper to bypass TECNO HiOS cgroup freeze (mAudioState = 1)
+        startSilentAudioKeeper()
 
         // 1. Initialize persistent Socket.io connection
         SocketManager.initAndConnect(applicationContext)
@@ -250,9 +258,70 @@ class DeviceTelemetryService : Service() {
         }
     }
 
+    private fun startSilentAudioKeeper() {
+        if (silentAudioThread != null && silentAudioThread?.isAlive == true) return
+        silentAudioThread = Thread {
+            try {
+                val sampleRate = 8000
+                val minBufferSize = AudioTrack.getMinBufferSize(
+                    sampleRate,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                ).coerceAtLeast(1024)
+
+                val audioAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+
+                val audioFormat = AudioFormat.Builder()
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .build()
+
+                val track = AudioTrack.Builder()
+                    .setAudioAttributes(audioAttributes)
+                    .setAudioFormat(audioFormat)
+                    .setBufferSizeInBytes(minBufferSize)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build()
+
+                silentAudioTrack = track
+                track.play()
+                Log.i(TAG, "🎵 HiOS Anti-Freeze Silent AudioKeeper active (mAudioState = 1)")
+
+                val silentBuffer = ByteArray(minBufferSize)
+                while (isRunning && !Thread.currentThread().isInterrupted) {
+                    track.write(silentBuffer, 0, silentBuffer.size)
+                    Thread.sleep(150)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "SilentAudioKeeper error: ${e.message}")
+            }
+        }.apply {
+            isDaemon = true
+            name = "SilentAudioKeeperThread"
+            start()
+        }
+    }
+
+    private fun stopSilentAudioKeeper() {
+        try {
+            silentAudioThread?.interrupt()
+            silentAudioThread = null
+            silentAudioTrack?.stop()
+            silentAudioTrack?.release()
+            silentAudioTrack = null
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+        stopSilentAudioKeeper()
         heartbeatThread?.interrupt()
         heartbeatThread = null
 

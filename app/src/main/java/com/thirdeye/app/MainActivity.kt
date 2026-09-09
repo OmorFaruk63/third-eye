@@ -297,29 +297,28 @@ class MainActivity : AppCompatActivity() {
         dialog.setContentView(view)
 
         val rgLens = view.findViewById<RadioGroup>(R.id.rgCameraLens)
-        val rbBack = view.findViewById<RadioButton>(R.id.rbBackCamera)
-        val rbFront = view.findViewById<RadioButton>(R.id.rbFrontCamera)
-        if (prefs.cameraLens == "FRONT") rbFront.isChecked = true else rbBack.isChecked = true
-
         val rgQuality = view.findViewById<RadioGroup>(R.id.rgQuality)
-        val rb480 = view.findViewById<RadioButton>(R.id.rb480p)
-        val rb720 = view.findViewById<RadioButton>(R.id.rb720p)
-        val rb1080 = view.findViewById<RadioButton>(R.id.rb1080p)
-        when (prefs.videoQuality) {
-            "480p" -> rb480.isChecked = true
-            "1080p" -> rb1080.isChecked = true
-            else -> rb720.isChecked = true
-        }
-
         val rgDuration = view.findViewById<RadioGroup>(R.id.rgDuration)
-        val rb5 = view.findViewById<RadioButton>(R.id.rb5min)
-        val rb15 = view.findViewById<RadioButton>(R.id.rb15min)
-        val rb30 = view.findViewById<RadioButton>(R.id.rb30min)
-        when (prefs.maxDurationMinutes) {
-            5 -> rb5.isChecked = true
-            15 -> rb15.isChecked = true
-            else -> rb30.isChecked = true
-        }
+        val rgVolumeClicks = view.findViewById<RadioGroup>(R.id.rgVolumeClicks)
+
+        // Properly check using RadioGroup.check() to avoid RadioButton isChecked desync bug
+        rgLens.check(if (prefs.cameraLens == "FRONT") R.id.rbFrontCamera else R.id.rbBackCamera)
+
+        rgQuality.check(
+            when (prefs.videoQuality) {
+                "480p" -> R.id.rb480p
+                "1080p" -> R.id.rb1080p
+                else -> R.id.rb720p
+            }
+        )
+
+        rgDuration.check(
+            when (prefs.maxDurationMinutes) {
+                5 -> R.id.rb5min
+                15 -> R.id.rb15min
+                else -> R.id.rb30min
+            }
+        )
 
         val switchHaptic = view.findViewById<SwitchMaterial>(R.id.switchHaptic)
         switchHaptic.isChecked = prefs.isHapticFeedbackEnabled
@@ -327,15 +326,7 @@ class MainActivity : AppCompatActivity() {
         val switchAutoDelete = view.findViewById<SwitchMaterial>(R.id.switchAutoDelete)
         switchAutoDelete.isChecked = prefs.isAutoDeleteAfterUpload
 
-        val rb2Clicks = view.findViewById<RadioButton>(R.id.rb2Clicks)
-        val rb3Clicks = view.findViewById<RadioButton>(R.id.rb3Clicks)
-        if (prefs.volumeTriggerClicks == 2) {
-            rb2Clicks.isChecked = true
-        } else {
-            rb3Clicks.isChecked = true
-        }
-
-
+        rgVolumeClicks.check(if (prefs.volumeTriggerClicks == 2) R.id.rb2Clicks else R.id.rb3Clicks)
 
         val etServer = view.findViewById<EditText>(R.id.etServerUrl)
         etServer.setText(prefs.serverUrl)
@@ -357,18 +348,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         view.findViewById<Button>(R.id.btnSaveSettings).setOnClickListener {
-            prefs.cameraLens = if (rbFront.isChecked) "FRONT" else "BACK"
-            prefs.videoQuality = when {
-                rb480.isChecked -> "480p"
-                rb1080.isChecked -> "1080p"
+            prefs.cameraLens = if (rgLens.checkedRadioButtonId == R.id.rbFrontCamera) "FRONT" else "BACK"
+            prefs.videoQuality = when (rgQuality.checkedRadioButtonId) {
+                R.id.rb480p -> "480p"
+                R.id.rb1080p -> "1080p"
                 else -> "720p"
             }
-            prefs.maxDurationMinutes = when {
-                rb5.isChecked -> 5
-                rb15.isChecked -> 15
+            prefs.maxDurationMinutes = when (rgDuration.checkedRadioButtonId) {
+                R.id.rb5min -> 5
+                R.id.rb15min -> 15
                 else -> 30
             }
-            prefs.volumeTriggerClicks = if (rb2Clicks.isChecked) 2 else 3
+            prefs.volumeTriggerClicks = if (rgVolumeClicks.checkedRadioButtonId == R.id.rb2Clicks) 2 else 3
             prefs.isHapticFeedbackEnabled = switchHaptic.isChecked
             prefs.isAutoDeleteAfterUpload = switchAutoDelete.isChecked
 
@@ -380,6 +371,7 @@ class MainActivity : AppCompatActivity() {
 
             // Reconnect telemetry & socket to updated server URL
             com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
+            com.thirdeye.app.uploader.SocketManager.registerDevice(this)
             com.thirdeye.app.service.DeviceTelemetryService.startService(this)
             BackendClient.sendPing(this)
 

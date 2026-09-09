@@ -120,6 +120,8 @@ io.on('connection', (socket) => {
         {
           lastSeen: now,
           ...(batteryLevel !== undefined ? { batteryLevel } : {}),
+          ...(data.videoQuality ? { videoQuality: data.videoQuality } : {}),
+          ...(data.cameraLens ? { cameraLens: data.cameraLens } : {}),
           ...(latitude ? { latitude: Number(latitude), locationUpdatedAt: now } : {}),
           ...(longitude ? { longitude: Number(longitude) } : {}),
           ...(locationName ? { locationName } : {}),
@@ -196,6 +198,8 @@ io.on('connection', (socket) => {
           lastSeen: now,
           ...(batteryLevel !== undefined ? { batteryLevel } : {}),
           ...(isRecording !== undefined ? { isRecording: Boolean(isRecording) } : {}),
+          ...(data.videoQuality ? { videoQuality: data.videoQuality } : {}),
+          ...(data.cameraLens ? { cameraLens: data.cameraLens } : {}),
           ...(latitude ? { latitude: Number(latitude), locationUpdatedAt: now } : {}),
           ...(longitude ? { longitude: Number(longitude) } : {}),
           ...(locationName ? { locationName } : {}),
@@ -215,6 +219,8 @@ io.on('connection', (socket) => {
       lastSeen: now,
       batteryLevel,
       isRecording: Boolean(isRecording),
+      videoQuality: data.videoQuality,
+      cameraLens: data.cameraLens,
       latitude: latitude ? Number(latitude) : undefined,
       longitude: longitude ? Number(longitude) : undefined,
       locationName: locationName || undefined,
@@ -341,7 +347,7 @@ io.on('connection', (socket) => {
     const lens = camera === 'FRONT' ? 'FRONT' : 'BACK';
     console.log(`⏺️ Remote recording requested for: ${deviceId} with lens: ${lens}`);
     try {
-      await Device.findOneAndUpdate({ deviceId }, { isRecording: true, cameraLens: lens });
+      await Device.findOneAndUpdate({ deviceId }, { isRecording: true });
     } catch (e) {}
     io.to(`device_${deviceId}`).emit('start-remote-recording', { deviceId, camera: lens });
     io.to('admins').emit('device-recording-status', { deviceId, isRecording: true, camera: lens });

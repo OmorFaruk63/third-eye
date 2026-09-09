@@ -31,6 +31,10 @@ const DeviceSchema = new mongoose.Schema({
     type: String,
     default: '720p',
   },
+  cameraLens: {
+    type: String,
+    default: 'BACK',
+  },
   appVersion: {
     type: String,
     default: '1.0',

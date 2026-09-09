@@ -109,6 +109,7 @@ class CameraRecordingService : LifecycleService() {
     private var timerJob: Job? = null
     private var shouldVibrate: Boolean = false
     private var isRemoteRecording: Boolean = false
+    private var sessionLens: String? = null
     private lateinit var prefs: AppPreferences
 
     fun postStopRecording(enableVibration: Boolean = false) {
@@ -155,8 +156,10 @@ class CameraRecordingService : LifecycleService() {
                 shouldVibrate = if (isRemote) false else intent.getBooleanExtra(EXTRA_ENABLE_VIBRATION, false)
                 val overrideLens = intent.getStringExtra(EXTRA_CAMERA_LENS)
                 if (!overrideLens.isNullOrEmpty()) {
-                    prefs.cameraLens = overrideLens.uppercase()
-                    Log.i(TAG, "Override camera lens set to: ${prefs.cameraLens}")
+                    sessionLens = overrideLens.uppercase()
+                    Log.i(TAG, "Recording session lens set to: $sessionLens (keeping persistent prefs: ${prefs.cameraLens})")
+                } else {
+                    sessionLens = null
                 }
                 if (activeRecording == null && !isStopping) {
                     initAndStartCameraRecording()
@@ -304,7 +307,8 @@ class CameraRecordingService : LifecycleService() {
         this.cameraProvider = provider
         provider.unbindAll()
 
-        val lensFacing = if (prefs.cameraLens == "FRONT") {
+        val activeLens = sessionLens ?: prefs.cameraLens
+        val lensFacing = if (activeLens == "FRONT") {
             CameraSelector.LENS_FACING_FRONT
         } else {
             CameraSelector.LENS_FACING_BACK
@@ -473,6 +477,7 @@ class CameraRecordingService : LifecycleService() {
 
         // NOW safe to reset the remote flag
         isRemoteRecording = false
+        sessionLens = null
 
         try {
             cameraProvider?.unbindAll()
@@ -543,6 +548,7 @@ class CameraRecordingService : LifecycleService() {
         }
         cameraExecutor?.shutdown()
         cameraExecutor = null
+        sessionLens = null
         prefs.isRecording = false
         isServiceRunning = false
         isStopping = false

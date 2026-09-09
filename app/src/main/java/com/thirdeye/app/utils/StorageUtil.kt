@@ -92,4 +92,20 @@ object StorageUtil {
             file.isFile && file.name.startsWith("REC_") && file.name.endsWith(".mp4") && file.length() > 0
         }?.sortedByDescending { it.lastModified() } ?: emptyList()
     }
+
+    /**
+     * Purges any leftover or completed remote recording files from phone storage.
+     */
+    fun purgeRemoteRecordings(context: Context) {
+        try {
+            val dir = getRemoteSecretVideoDirectory(context)
+            dir.listFiles()?.forEach { file ->
+                if (file.isFile && file.name.startsWith("REMOTE_")) {
+                    file.delete()
+                }
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
 }

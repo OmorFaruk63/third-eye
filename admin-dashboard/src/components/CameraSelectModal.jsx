@@ -24,6 +24,7 @@ export default function CameraSelectModal() {
 
   const { device, actionType } = cameraModal;
   const isRecordAction = actionType === "record";
+  const currentDeviceLens = (device?.cameraLens || "BACK").toUpperCase();
 
   const handleSelectLens = (lens) => {
     handleConfirmCameraAction(lens);
@@ -215,6 +216,24 @@ export default function CameraSelectModal() {
                   >
                     REAR
                   </Box>
+                  {currentDeviceLens === "BACK" && (
+                    <Box
+                      sx={{
+                        px: 0.8,
+                        py: 0.15,
+                        borderRadius: "4px",
+                        fontSize: "0.6rem",
+                        fontWeight: 700,
+                        bgcolor: "rgba(16, 185, 129, 0.15)",
+                        color: "#34d399",
+                        border: "1px solid rgba(16, 185, 129, 0.35)",
+                        fontFamily: '"JetBrains Mono", monospace',
+                        letterSpacing: "0.03em",
+                      }}
+                    >
+                      SAVED ON PHONE
+                    </Box>
+                  )}
                 </Box>
                 <Typography
                   sx={{ color: "#94a3b8", fontSize: "0.76rem", mt: 0.2 }}
@@ -309,6 +328,24 @@ export default function CameraSelectModal() {
                   >
                     SELFIE
                   </Box>
+                  {currentDeviceLens === "FRONT" && (
+                    <Box
+                      sx={{
+                        px: 0.8,
+                        py: 0.15,
+                        borderRadius: "4px",
+                        fontSize: "0.6rem",
+                        fontWeight: 700,
+                        bgcolor: "rgba(16, 185, 129, 0.15)",
+                        color: "#34d399",
+                        border: "1px solid rgba(16, 185, 129, 0.35)",
+                        fontFamily: '"JetBrains Mono", monospace',
+                        letterSpacing: "0.03em",
+                      }}
+                    >
+                      SAVED ON PHONE
+                    </Box>
+                  )}
                 </Box>
                 <Typography
                   sx={{ color: "#94a3b8", fontSize: "0.76rem", mt: 0.2 }}
