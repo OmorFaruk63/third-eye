@@ -154,7 +154,7 @@ class MainActivity : AppCompatActivity() {
                     binding.tvRecordStatus.text = "STARTING..."
                     binding.btnToggleRecord.isEnabled = false
                     binding.btnToggleRecord.postDelayed({ binding.btnToggleRecord.isEnabled = true }, 1500)
-                    CameraRecordingService.startService(this, enableVibration = false)
+                    CameraRecordingService.startService(this, enableVibration = false, cameraLens = prefs.cameraLens)
                 } else {
                     checkPermissions()
                 }
@@ -380,6 +380,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Settings Saved", Toast.LENGTH_SHORT).show()
         }
 
+        dialog.setOnDismissListener { updateStatusBadges() }
         dialog.show()
     }
 

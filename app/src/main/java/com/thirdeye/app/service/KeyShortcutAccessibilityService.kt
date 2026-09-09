@@ -131,7 +131,7 @@ class KeyShortcutAccessibilityService : AccessibilityService() {
             CameraRecordingService.stopService(this, enableVibration = true)
         } else {
             Log.i(TAG, "Starting recording via shortcut")
-            CameraRecordingService.startService(this, enableVibration = true)
+            CameraRecordingService.startService(this, enableVibration = true, cameraLens = prefs.cameraLens)
         }
     }
 
