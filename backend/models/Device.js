@@ -87,6 +87,8 @@ const DeviceSchema = new mongoose.Schema({
     districtAndCountry: String,
     accuracy: Number,
     source: { type: String, default: 'GPS' },
+    startTime: { type: Date, default: Date.now },
+    endTime: { type: Date, default: Date.now },
     timestamp: { type: Date, default: Date.now },
   }],
 }, { timestamps: true });

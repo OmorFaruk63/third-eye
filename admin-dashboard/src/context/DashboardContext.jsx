@@ -309,7 +309,7 @@ export function DashboardProvider({ children }) {
       },
     );
 
-    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry, locationUpdatedAt, accuracy, source, newLocationEntry }) => {
+    s.on("device-heartbeat", ({ deviceId, lastSeen, batteryLevel, isRecording, latitude, longitude, locationName, villageOrPara, districtAndCountry, locationUpdatedAt, accuracy, source, locationHistory, updatedLocationEntry, isNewLocation }) => {
       setOnlineSocketDevices((prev) => {
         const next = new Set(prev);
         next.add(deviceId);
@@ -329,6 +329,7 @@ export function DashboardProvider({ children }) {
                 ...(villageOrPara ? { villageOrPara } : {}),
                 ...(districtAndCountry ? { districtAndCountry } : {}),
                 ...(locationUpdatedAt ? { locationUpdatedAt } : (latitude ? { locationUpdatedAt: new Date() } : {})),
+                ...(Array.isArray(locationHistory) ? { locationHistory } : {}),
               }
             : d,
         ),
@@ -337,9 +338,17 @@ export function DashboardProvider({ children }) {
       // If this is the active device in the DeviceDetailsModal, update it in real time!
       setSelectedDeviceDetails((current) => {
         if (current && current.deviceId === deviceId) {
-          const updatedHistory = [...(current.locationHistory || [])];
-          if (newLocationEntry) {
-            updatedHistory.unshift(newLocationEntry);
+          let updatedHistory = current.locationHistory ? [...current.locationHistory] : [];
+          if (Array.isArray(locationHistory)) {
+            updatedHistory = locationHistory;
+          } else if (updatedLocationEntry) {
+            if (isNewLocation) {
+              updatedHistory.unshift(updatedLocationEntry);
+            } else if (updatedHistory.length > 0) {
+              updatedHistory[0] = updatedLocationEntry;
+            } else {
+              updatedHistory.push(updatedLocationEntry);
+            }
           }
           return {
             ...current,

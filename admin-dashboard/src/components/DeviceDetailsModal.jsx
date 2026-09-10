@@ -27,6 +27,7 @@ import {
   isLocationLive,
   formatLocationAge,
   getLocationSecondary,
+  formatLocationTimeRange,
 } from '../utils/locationHelper';
 
 import Dialog from '@mui/material/Dialog';
@@ -538,7 +539,22 @@ export default function DeviceDetailsModal() {
             >
               {locationHistory.map((item, idx) => {
                 const itemVillage = item.villageOrPara || (item.locationName ? item.locationName.split(',')[0] : 'Unknown Location');
-                const itemSecondary = item.districtAndCountry || (item.locationName ? item.locationName.split(',').slice(1).join(', ') : '');
+
+                const startDate = item.startTime ? new Date(item.startTime) : (item.timestamp ? new Date(item.timestamp) : null);
+                const endDate = item.endTime ? new Date(item.endTime) : (item.timestamp ? new Date(item.timestamp) : null);
+
+                const hasDuration = startDate && endDate && (endDate.getTime() - startDate.getTime() >= 60000);
+                const diffMins = hasDuration ? Math.floor((endDate.getTime() - startDate.getTime()) / 60000) : 0;
+                let durationText = '';
+                if (diffMins > 0) {
+                  if (diffMins < 60) {
+                    durationText = `${diffMins}m stayed`;
+                  } else {
+                    const hrs = Math.floor(diffMins / 60);
+                    const mins = diffMins % 60;
+                    durationText = mins > 0 ? `${hrs}h ${mins}m stayed` : `${hrs}h stayed`;
+                  }
+                }
 
                 return (
                   <Box
@@ -598,14 +614,28 @@ export default function DeviceDetailsModal() {
                             />
                           )}
                         </Box>
-                        {itemSecondary && (
-                          <Typography sx={{ fontSize: 11, color: '#94a3b8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {itemSecondary}
+                        <Box sx={{ mt: 0.3 }}>
+                          <Typography sx={{ fontSize: 10, fontFamily: 'monospace', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 0.8, flexWrap: 'wrap' }}>
+                            <span>Start: {startDate ? startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'N/A'}</span>
+                            <span>•</span>
+                            <span>End: {endDate ? endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Active'}</span>
+                            {durationText && (
+                              <Chip
+                                size="small"
+                                label={durationText}
+                                sx={{
+                                  height: 15,
+                                  fontSize: 8,
+                                  fontWeight: 700,
+                                  bgcolor: 'rgba(0, 229, 255, 0.12)',
+                                  color: '#00e5ff',
+                                  border: '1px solid rgba(0, 229, 255, 0.3)',
+                                  fontFamily: 'monospace',
+                                }}
+                              />
+                            )}
                           </Typography>
-                        )}
-                        <Typography sx={{ fontSize: 10, fontFamily: 'monospace', color: '#64748b', mt: 0.2 }}>
-                          {item.latitude && item.longitude ? `${item.latitude.toFixed(5)}, ${item.longitude.toFixed(5)}` : ''} • {formatHistoryTime(item.timestamp)}
-                        </Typography>
+                        </Box>
                       </Box>
                     </Box>
 

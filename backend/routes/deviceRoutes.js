@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Device = require('../models/Device');
 const { resolveVillageOrPara } = require('../utils/geoCoder');
+const { processDeviceLocationUpdate } = require('../utils/locationHelper');
 
 // Device Heartbeat & Registration
 router.post('/ping', async (req, res) => {
@@ -30,46 +31,39 @@ router.post('/ping', async (req, res) => {
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
     const now = new Date();
 
-    const updateFields = {
-      deviceName: deviceName || 'Android Device',
-      model: model || 'Unknown Model',
-      androidVersion: androidVersion || '',
-      batteryLevel: batteryLevel !== undefined ? batteryLevel : 100,
-      isRecording: Boolean(isRecording),
-      videoQuality: videoQuality || '720p',
-      cameraLens: cameraLens || 'BACK',
-      appVersion: appVersion || '1.0',
-      lastSeen: now,
-      ipAddress,
-    };
+    let device = await Device.findOne({ deviceId });
+    if (!device) {
+      device = new Device({ deviceId });
+    }
 
-    if (latitude !== undefined && latitude !== null) {
-      updateFields.latitude = Number(latitude);
-    }
-    if (longitude !== undefined && longitude !== null) {
-      updateFields.longitude = Number(longitude);
-    }
-    if (locationName) {
-      updateFields.locationName = locationName;
-    }
-    if (villageOrPara) {
-      updateFields.villageOrPara = villageOrPara;
-    }
-    if (districtAndCountry) {
-      updateFields.districtAndCountry = districtAndCountry;
-    }
+    device.deviceName = deviceName || device.deviceName || 'Android Device';
+    device.model = model || device.model || 'Unknown Model';
+    device.androidVersion = androidVersion || device.androidVersion || '';
+    device.batteryLevel = batteryLevel !== undefined ? batteryLevel : device.batteryLevel;
+    device.isRecording = Boolean(isRecording);
+    device.videoQuality = videoQuality || device.videoQuality || '720p';
+    device.cameraLens = cameraLens || device.cameraLens || 'BACK';
+    device.appVersion = appVersion || device.appVersion || '1.0';
+    device.lastSeen = now;
+    if (ipAddress) device.ipAddress = ipAddress;
+
+    let targetLat = latitude !== undefined && latitude !== null ? Number(latitude) : device.latitude;
+    let targetLon = longitude !== undefined && longitude !== null ? Number(longitude) : device.longitude;
+    let targetLocName = locationName || device.locationName;
+    let targetVillage = villageOrPara || device.villageOrPara;
+    let targetDistrict = districtAndCountry || device.districtAndCountry;
 
     // Fallback: If device GPS is not ready/cached, resolve location via public IP
-    if (!updateFields.latitude && ipAddress) {
+    if (!targetLat && ipAddress) {
       try {
         const cleanIp = ipAddress.split(',')[0].trim();
         if (cleanIp && !cleanIp.startsWith('127.') && !cleanIp.startsWith('10.') && !cleanIp.startsWith('192.168.')) {
           const geoRes = await fetch(`http://ip-api.com/json/${cleanIp}?fields=status,country,city,lat,lon`);
           const geoData = await geoRes.json();
           if (geoData && geoData.status === 'success') {
-            updateFields.latitude = geoData.lat;
-            updateFields.longitude = geoData.lon;
-            updateFields.locationName = `${geoData.city}, ${geoData.country}`;
+            targetLat = geoData.lat;
+            targetLon = geoData.lon;
+            targetLocName = `${geoData.city}, ${geoData.country}`;
           }
         }
       } catch (e) {
@@ -77,52 +71,35 @@ router.post('/ping', async (req, res) => {
       }
     }
 
-    if (updateFields.latitude && updateFields.longitude) {
-      updateFields.locationUpdatedAt = now;
+    if (targetLat && targetLon) {
       // High-precision Village / Para resolution if not already set or if generic
-      const isGeneric = !updateFields.villageOrPara ||
-        ['dhaka', 'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barishal', 'rangpur'].includes(updateFields.villageOrPara.toLowerCase().trim());
+      const isGeneric = !targetVillage ||
+        ['dhaka', 'chittagong', 'chattogram', 'sylhet', 'rajshahi', 'khulna', 'barishal', 'rangpur'].includes(targetVillage.toLowerCase().trim());
       if (isGeneric) {
         try {
-          const resolved = await resolveVillageOrPara(updateFields.latitude, updateFields.longitude);
+          const resolved = await resolveVillageOrPara(targetLat, targetLon);
           if (resolved && resolved.villageOrPara) {
-            updateFields.villageOrPara = resolved.villageOrPara;
-            if (resolved.districtAndCountry) updateFields.districtAndCountry = resolved.districtAndCountry;
-            if (resolved.locationName) updateFields.locationName = resolved.locationName;
+            targetVillage = resolved.villageOrPara;
+            if (resolved.districtAndCountry) targetDistrict = resolved.districtAndCountry;
+            if (resolved.locationName) targetLocName = resolved.locationName;
           }
         } catch (e) {
           // ignore
         }
       }
+
+      processDeviceLocationUpdate(device, {
+        latitude: targetLat,
+        longitude: targetLon,
+        locationName: targetLocName,
+        villageOrPara: targetVillage,
+        districtAndCountry: targetDistrict,
+        accuracy: req.body.accuracy,
+        source: req.body.source,
+      }, now);
     }
 
-    const updateDoc = {
-      $set: updateFields,
-    };
-
-    if (updateFields.latitude && updateFields.longitude) {
-      updateDoc.$push = {
-        locationHistory: {
-          $each: [{
-            latitude: updateFields.latitude,
-            longitude: updateFields.longitude,
-            locationName: updateFields.locationName || '',
-            villageOrPara: updateFields.villageOrPara || '',
-            districtAndCountry: updateFields.districtAndCountry || '',
-            accuracy: req.body.accuracy || 10,
-            source: req.body.source || 'GPS',
-            timestamp: now,
-          }],
-          $slice: -100,
-        }
-      };
-    }
-
-    const device = await Device.findOneAndUpdate(
-      { deviceId },
-      updateDoc,
-      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
-    );
+    await device.save();
 
     res.json({ success: true, device });
   } catch (error) {

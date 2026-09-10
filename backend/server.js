@@ -17,6 +17,7 @@ const videoRoutes = require('./routes/videoRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const Device = require('./models/Device');
 const { resolveVillageOrPara } = require('./utils/geoCoder');
+const { processDeviceLocationUpdate } = require('./utils/locationHelper');
 
 const app = express();
 const server = http.createServer(app);
@@ -172,75 +173,60 @@ io.on('connection', (socket) => {
       }
     }
 
-    const locUpdate = {};
-    if (latitude && longitude) {
-      const locEntry = {
-        latitude: Number(latitude),
-        longitude: Number(longitude),
-        locationName: locationName || '',
-        villageOrPara: villageOrPara || '',
-        districtAndCountry: districtAndCountry || '',
-        accuracy: data.accuracy || 10,
-        source: data.source || 'GPS',
-        timestamp: now,
-      };
-      locUpdate.$push = {
-        locationHistory: {
-          $each: [locEntry],
-          $slice: -100, // Keep latest 100 entries
-        }
-      };
-    }
+    let updatedLocationEntry = null;
+    let isNewLocation = false;
 
     try {
-      const updateDoc = {
-        $set: {
-          lastSeen: now,
-          ...(batteryLevel !== undefined ? { batteryLevel } : {}),
-          ...(isRecording !== undefined ? { isRecording: Boolean(isRecording) } : {}),
-          ...(data.videoQuality ? { videoQuality: data.videoQuality } : {}),
-          ...(data.cameraLens ? { cameraLens: data.cameraLens } : {}),
-          ...(latitude ? { latitude: Number(latitude), locationUpdatedAt: now } : {}),
-          ...(longitude ? { longitude: Number(longitude) } : {}),
-          ...(locationName ? { locationName } : {}),
-          ...(villageOrPara ? { villageOrPara } : {}),
-          ...(districtAndCountry ? { districtAndCountry } : {}),
-        },
-        ...locUpdate,
-      };
+      let device = await Device.findOne({ deviceId });
+      if (!device) {
+        device = new Device({ deviceId, deviceName: deviceName || 'Android' });
+      }
 
-      await Device.findOneAndUpdate({ deviceId }, updateDoc, { upsert: true });
+      device.lastSeen = now;
+      if (batteryLevel !== undefined) device.batteryLevel = batteryLevel;
+      if (isRecording !== undefined) device.isRecording = Boolean(isRecording);
+      if (data.videoQuality) device.videoQuality = data.videoQuality;
+      if (data.cameraLens) device.cameraLens = data.cameraLens;
+
+      if (latitude && longitude) {
+        const locResult = processDeviceLocationUpdate(device, {
+          latitude,
+          longitude,
+          locationName,
+          villageOrPara,
+          districtAndCountry,
+          accuracy: data.accuracy,
+          source: data.source,
+        }, now);
+        updatedLocationEntry = locResult.updatedEntry;
+        isNewLocation = locResult.isNew;
+      }
+
+      await device.save();
+
+      io.to('admins').emit('device-heartbeat', {
+        deviceId,
+        lastSeen: now,
+        batteryLevel,
+        isRecording: Boolean(isRecording),
+        videoQuality: data.videoQuality,
+        cameraLens: data.cameraLens,
+        latitude: latitude ? Number(latitude) : undefined,
+        longitude: longitude ? Number(longitude) : undefined,
+        locationName: locationName || undefined,
+        villageOrPara: villageOrPara || undefined,
+        districtAndCountry: districtAndCountry || undefined,
+        locationUpdatedAt: latitude ? now : undefined,
+        accuracy: data.accuracy || 10,
+        source: data.source || 'GPS',
+        isOnline: true,
+        locationHistory: device.locationHistory,
+        updatedLocationEntry,
+        isNewLocation,
+      });
     } catch (e) {
       console.error('Error updating device heartbeat:', e.message);
     }
-
-    io.to('admins').emit('device-heartbeat', {
-      deviceId,
-      lastSeen: now,
-      batteryLevel,
-      isRecording: Boolean(isRecording),
-      videoQuality: data.videoQuality,
-      cameraLens: data.cameraLens,
-      latitude: latitude ? Number(latitude) : undefined,
-      longitude: longitude ? Number(longitude) : undefined,
-      locationName: locationName || undefined,
-      villageOrPara: villageOrPara || undefined,
-      districtAndCountry: districtAndCountry || undefined,
-      locationUpdatedAt: latitude ? now : undefined,
-      accuracy: data.accuracy || 10,
-      source: data.source || 'GPS',
-      isOnline: true,
-      newLocationEntry: latitude && longitude ? {
-        latitude: Number(latitude),
-        longitude: Number(longitude),
-        locationName: locationName || '',
-        villageOrPara: villageOrPara || '',
-        districtAndCountry: districtAndCountry || '',
-        accuracy: data.accuracy || 10,
-        source: data.source || 'GPS',
-        timestamp: now,
-      } : undefined,
-    });
   });
 
   // Admin requests real-time GPS location refresh from phone

@@ -36,8 +36,8 @@ class AppPreferences(context: Context) {
             if (saved.isNullOrEmpty()) {
                 return com.thirdeye.app.BuildConfig.DEFAULT_SERVER_URL
             }
-            // If in DEV flavor but saved URL is outdated, auto-migrate to local dev URL
-            if (com.thirdeye.app.BuildConfig.IS_DEV_ENVIRONMENT && (saved.contains("onrender.com") || saved.contains("192.168.10.196"))) {
+            // If in DEV flavor, auto-migrate saved URL if it points to old IP or cloud
+            if (com.thirdeye.app.BuildConfig.IS_DEV_ENVIRONMENT && (saved.contains("onrender.com") || saved.contains("192.168.") || saved.contains("http://192"))) {
                 val devUrl = com.thirdeye.app.BuildConfig.DEFAULT_SERVER_URL
                 serverUrl = devUrl
                 return devUrl

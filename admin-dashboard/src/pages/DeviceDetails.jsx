@@ -30,6 +30,7 @@ import {
   isLocationLive,
   formatLocationAge,
   getLocationSecondary,
+  formatLocationTimeRange,
 } from '../utils/locationHelper';
 
 import Box from '@mui/material/Box';
@@ -640,11 +641,9 @@ export default function DeviceDetails() {
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ width: 60 }}>#</TableCell>
-                  <TableCell>Date & Time</TableCell>
-                  <TableCell>Village / Para / Area</TableCell>
-                  <TableCell>District & Country</TableCell>
-                  <TableCell>Coordinates</TableCell>
+                  <TableCell sx={{ width: 50 }}>#</TableCell>
+                  <TableCell>Area</TableCell>
+                  <TableCell>Date, Time & Duration</TableCell>
                   <TableCell>Source & Accuracy</TableCell>
                   <TableCell align="right">Google Maps</TableCell>
                 </TableRow>
@@ -654,7 +653,26 @@ export default function DeviceDetails() {
                   const absoluteIndex = (historyPage - 1) * itemsPerPage + idx + 1;
                   const isLatest = absoluteIndex === 1 && !searchHistoryQuery;
                   const itemVillage = item.villageOrPara || (item.locationName ? item.locationName.split(',')[0] : 'Unknown Location');
-                  const itemSecondary = item.districtAndCountry || (item.locationName ? item.locationName.split(',').slice(1).join(', ') : '');
+
+                  const startDate = item.startTime ? new Date(item.startTime) : (item.timestamp ? new Date(item.timestamp) : new Date());
+                  const endDate = item.endTime ? new Date(item.endTime) : (item.timestamp ? new Date(item.timestamp) : startDate);
+
+                  const dateStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  const startStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                  const endStr = endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+                  const diffMins = Math.max(0, Math.floor((endDate.getTime() - startDate.getTime()) / 60000));
+
+                  let durationLabel = '';
+                  if (diffMins >= 60) {
+                    const hrs = Math.floor(diffMins / 60);
+                    const mins = diffMins % 60;
+                    durationLabel = mins > 0 ? `${hrs}h ${mins}m stayed` : `${hrs}h stayed`;
+                  } else if (diffMins > 0) {
+                    durationLabel = `${diffMins}m stayed`;
+                  } else {
+                    durationLabel = formatTimeAgo(endDate);
+                  }
 
                   return (
                     <TableRow
@@ -677,23 +695,13 @@ export default function DeviceDetails() {
                         </Box>
                       </TableCell>
 
-                      {/* Timestamp */}
-                      <TableCell>
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#cbd5e1', fontWeight: 600, display: 'block' }}>
-                          {formatFullTime(item.timestamp)}
-                        </Typography>
-                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#64748b', fontSize: '0.7rem' }}>
-                          {formatTimeAgo(item.timestamp)}
-                        </Typography>
-                      </TableCell>
-
-                      {/* Village / Para */}
+                      {/* Area */}
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Box
                             sx={{
-                              width: 24,
-                              height: 24,
+                              width: 26,
+                              height: 26,
                               borderRadius: '6px',
                               bgcolor: isLatest ? 'rgba(0, 230, 118, 0.2)' : 'rgba(255,255,255,0.05)',
                               display: 'flex',
@@ -703,7 +711,7 @@ export default function DeviceDetails() {
                               flexShrink: 0,
                             }}
                           >
-                            <MapPin size={12} />
+                            <MapPin size={13} />
                           </Box>
                           <Box sx={{ minWidth: 0 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
@@ -730,39 +738,16 @@ export default function DeviceDetails() {
                         </Box>
                       </TableCell>
 
-                      {/* District & Country */}
+                      {/* Date, Time & Duration (Combined) */}
                       <TableCell>
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                          {itemSecondary || 'Bangladesh'}
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#cbd5e1', fontWeight: 700, display: 'block' }}>
+                          {dateStr}
                         </Typography>
-                      </TableCell>
-
-                      {/* Coordinates with Copy */}
-                      <TableCell>
-                        {item.latitude && item.longitude ? (
-                          <Button
-                            size="small"
-                            onClick={() => copyToClipboard(`${item.latitude}, ${item.longitude}`, `hist_${idx}`)}
-                            endIcon={copiedText === `hist_${idx}` ? <Check size={11} color="#00e676" /> : <Copy size={11} />}
-                            sx={{
-                              fontFamily: '"JetBrains Mono", monospace',
-                              fontSize: '0.72rem',
-                              color: '#cbd5e1',
-                              background: 'rgba(0,0,0,0.4)',
-                              border: '1px solid rgba(255,255,255,0.08)',
-                              px: 0.8,
-                              py: 0.2,
-                              minWidth: 0,
-                              '&:hover': { borderColor: 'rgba(0,229,255,0.4)', color: '#fff' },
-                            }}
-                          >
-                            {item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}
-                          </Button>
-                        ) : (
-                          <Typography variant="caption" sx={{ color: '#64748b', fontFamily: 'monospace' }}>
-                            N/A
-                          </Typography>
-                        )}
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#94a3b8', fontSize: '0.75rem', display: 'block', mt: 0.2 }}>
+                          {startStr} – {endStr}
+                          {' '}
+                          <span style={{ color: '#00e5ff', fontWeight: 700 }}>({durationLabel})</span>
+                        </Typography>
                       </TableCell>
 
                       {/* Source & Accuracy */}

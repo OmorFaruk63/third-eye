@@ -268,3 +268,63 @@ export function getLocationSecondary(device) {
   }
   return "";
 }
+
+/**
+ * Formats time string (e.g. 08:03 AM)
+ */
+export function formatTimeOnly(dateVal) {
+  if (!dateVal) return '';
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+/**
+ * Formats location start & end time range with stayed duration
+ * E.g., 'Sep 10, 2026, 12:00 PM – 04:15 PM' | '4h 15m stayed'
+ */
+export function formatLocationTimeRange(item) {
+  if (!item) return { fullText: 'Unknown Time', durationText: '', isSingle: true };
+
+  const start = item.startTime ? new Date(item.startTime) : (item.timestamp ? new Date(item.timestamp) : null);
+  const end = item.endTime ? new Date(item.endTime) : (item.timestamp ? new Date(item.timestamp) : null);
+
+  if (!start || isNaN(start.getTime())) {
+    return { fullText: 'Unknown Time', durationText: '', isSingle: true };
+  }
+
+  const startDateStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const startTimeStr = formatTimeOnly(start);
+
+  if (!end || isNaN(end.getTime()) || Math.abs(end.getTime() - start.getTime()) < 60000) {
+    return {
+      fullText: `${startDateStr}, ${startTimeStr}`,
+      durationText: '',
+      isSingle: true,
+    };
+  }
+
+  const endDateStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const endTimeStr = formatTimeOnly(end);
+  const diffMins = Math.floor((end.getTime() - start.getTime()) / 60000);
+
+  let durationText = '';
+  if (diffMins < 60) {
+    durationText = `${diffMins}m stayed`;
+  } else {
+    const hrs = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    durationText = mins > 0 ? `${hrs}h ${mins}m stayed` : `${hrs}h stayed`;
+  }
+
+  const rangeStr = startDateStr === endDateStr
+    ? `${startDateStr}, ${startTimeStr} – ${endTimeStr}`
+    : `${startDateStr}, ${startTimeStr} – ${endDateStr}, ${endTimeStr}`;
+
+  return {
+    fullText: rangeStr,
+    durationText,
+    isSingle: false,
+  };
+}
+
