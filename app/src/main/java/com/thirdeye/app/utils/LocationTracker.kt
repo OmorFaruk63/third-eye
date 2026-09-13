@@ -17,6 +17,10 @@ import java.util.Locale
 object LocationTracker {
     private const val TAG = "LocationTracker"
 
+    private const val IDLE_INTERVAL_MS = 60000L // 60s idle interval
+    private const val IDLE_MIN_DISTANCE_M = 30f // 30 meters
+    private const val STATIONARY_THRESHOLD_M = 25f // 25 meters threshold
+
     data class LocationResult(
         val latitude: Double,
         val longitude: Double,
@@ -24,6 +28,7 @@ object LocationTracker {
         val districtAndCountry: String = "",
         val fullAddress: String = "",
         val accuracy: Float = 0f,
+        val speedKmh: Float = 0f,
         val timestamp: Long = System.currentTimeMillis()
     )
 
@@ -33,13 +38,31 @@ object LocationTracker {
     private var lastResult: LocationResult? = null
     @Volatile
     private var isListening = false
+    @Volatile
+    private var appContext: Context? = null
 
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             val current = lastKnownLocation
-            if (current == null || location.accuracy <= current.accuracy || location.time - current.time > 15000L) {
+            val distance = if (current != null) location.distanceTo(current) else Float.MAX_VALUE
+            val isStationary = distance < STATIONARY_THRESHOLD_M
+            val speedKmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
+
+            if (current == null || !isStationary || location.accuracy < current.accuracy) {
                 lastKnownLocation = location
-                Log.d(TAG, "📍 New GPS Location: ${location.latitude}, ${location.longitude} (Acc: ${location.accuracy}m)")
+                Log.d(TAG, "📍 Adaptive Location Update: ${location.latitude}, ${location.longitude} (Acc: ${location.accuracy}m, Dist: ${distance}m, Speed: ${speedKmh}km/h, Stationary: $isStationary)")
+
+                // Offline vault caching when network / socket is disconnected
+                val ctx = appContext
+                if (ctx != null && !com.thirdeye.app.uploader.SocketManager.isConnected()) {
+                    com.thirdeye.app.data.OfflineLocationVault.getInstance(ctx).saveLocation(
+                        location.latitude,
+                        location.longitude,
+                        speedKmh,
+                        location.accuracy,
+                        location.time.takeIf { it > 0 } ?: System.currentTimeMillis()
+                    )
+                }
             }
         }
 
@@ -49,6 +72,10 @@ object LocationTracker {
         override fun onProviderDisabled(provider: String) {}
     }
 
+    /**
+     * Starts adaptive, low-power background location listening.
+     * Uses NETWORK_PROVIDER and PASSIVE_PROVIDER to turn off power-hungry GPS hardware during idle state.
+     */
     @SuppressLint("MissingPermission")
     fun startListening(context: Context) {
         if (isListening) return
@@ -62,86 +89,185 @@ object LocationTracker {
         }
 
         try {
+            appContext = context.applicationContext
             val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
             isListening = true
 
             // Fast check of last known locations
-            val gpsLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER)
-            val netLoc = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
-            val passiveLoc = locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+            val gpsLoc = try { locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (e: Exception) { null }
+            val netLoc = try { locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (e: Exception) { null }
+            val passiveLoc = try { locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) } catch (e: Exception) { null }
 
             val bestInitial = listOfNotNull(gpsLoc, netLoc, passiveLoc).minByOrNull { it.accuracy }
             if (bestInitial != null) {
                 lastKnownLocation = bestInitial
             }
 
-            // Register for active updates (min 15 seconds, min 5 meters)
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    15000L,
-                    5f,
-                    locationListener,
-                    Looper.getMainLooper()
-                )
-            }
-
+            // Prefer low-power NETWORK_PROVIDER during idle background state (60s, 30m)
+            var providerRegistered = false
             if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
                 locationManager.requestLocationUpdates(
                     LocationManager.NETWORK_PROVIDER,
-                    15000L,
-                    5f,
+                    IDLE_INTERVAL_MS,
+                    IDLE_MIN_DISTANCE_M,
                     locationListener,
                     Looper.getMainLooper()
                 )
+                providerRegistered = true
+                Log.d(TAG, "⚡ Low-power NETWORK_PROVIDER registered (${IDLE_INTERVAL_MS}ms, ${IDLE_MIN_DISTANCE_M}m)")
             }
 
-            Log.i(TAG, "✅ Active Real-Time Location Tracking initiated")
+            // Always listen on PASSIVE_PROVIDER (free piggyback on other apps with 0 battery consumption)
+            try {
+                if (locationManager.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)) {
+                    locationManager.requestLocationUpdates(
+                        LocationManager.PASSIVE_PROVIDER,
+                        IDLE_INTERVAL_MS,
+                        IDLE_MIN_DISTANCE_M,
+                        locationListener,
+                        Looper.getMainLooper()
+                    )
+                }
+            } catch (e: Exception) {
+                // Ignore passive provider errors
+            }
+
+            // Only fallback to GPS_PROVIDER if NETWORK_PROVIDER is completely unavailable
+            if (!providerRegistered && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    IDLE_INTERVAL_MS,
+                    IDLE_MIN_DISTANCE_M,
+                    locationListener,
+                    Looper.getMainLooper()
+                )
+                Log.d(TAG, "⚠️ Network provider unavailable, fallback to GPS_PROVIDER with idle interval (${IDLE_INTERVAL_MS}ms)")
+            }
+
+            Log.i(TAG, "✅ Smart Adaptive Battery-Saver Location Tracking initiated")
         } catch (e: Exception) {
-            Log.w(TAG, "Error registering location updates: ${e.message}")
+            Log.w(TAG, "Error registering adaptive location updates: ${e.message}")
         }
     }
 
+    /**
+     * High-Accuracy On-Demand Location Refresh:
+     * When requested from Admin Dashboard ('request-device-location'), immediately fires GPS_PROVIDER
+     * with a temporary 12s safety timeout and WakeLock. Once pinpoint fix is acquired, GPS hardware
+     * is immediately released and state returns to low-power idle mode.
+     */
     @SuppressLint("MissingPermission")
     fun forceRefreshLocation(context: Context, onLocationReady: ((LocationResult) -> Unit)? = null) {
         val fineGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarseGranted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (!fineGranted && !coarseGranted) return
+        if (!fineGranted && !coarseGranted) {
+            val fallback = lastResult
+            if (fallback != null) onLocationReady?.invoke(fallback)
+            return
+        }
 
         try {
             val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+            // Ensure background listener is running
             startListening(context)
+
+            // Acquire brief wake lock for GPS pinpoint lock
+            com.thirdeye.app.service.DeviceTelemetryService.acquireBriefWakeLock(context, 15000L)
+
+            val handler = android.os.Handler(Looper.getMainLooper())
+            var isCompleted = false
 
             val singleListener = object : LocationListener {
                 override fun onLocationChanged(loc: Location) {
-                    lastKnownLocation = loc
-                    val res = resolveLocationResult(context, loc)
-                    onLocationReady?.invoke(res)
+                    if (isCompleted) return
+                    isCompleted = true
                     try {
                         locationManager.removeUpdates(this)
                     } catch (e: Exception) {}
+
+                    lastKnownLocation = loc
+                    Log.i(TAG, "🎯 High-accuracy on-demand GPS fix acquired: ${loc.latitude}, ${loc.longitude} (Acc: ${loc.accuracy}m)")
+
+                    Thread {
+                        try {
+                            val res = resolveLocationResult(context, loc)
+                            handler.post {
+                                onLocationReady?.invoke(res)
+                                com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
+                            }
+                        } catch (e: Exception) {
+                            com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
+                        }
+                    }.start()
                 }
+
+                @Deprecated("Deprecated in Java")
                 override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
                 override fun onProviderEnabled(provider: String) {}
                 override fun onProviderDisabled(provider: String) {}
             }
 
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, singleListener, Looper.getMainLooper())
-            } else if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestSingleUpdate(LocationManager.NETWORK_PROVIDER, singleListener, Looper.getMainLooper())
-            }
+            // Safety timeout runnable (12 seconds) in case GPS satellite lock is obstructed indoors
+            val timeoutRunnable = Runnable {
+                if (isCompleted) return@Runnable
+                isCompleted = true
+                Log.w(TAG, "⏱️ GPS on-demand timeout (12s) reached, falling back to best known location")
+                try {
+                    locationManager.removeUpdates(singleListener)
+                } catch (e: Exception) {}
 
-            val current = getLiveLocation(context)
-            if (current != null) {
-                onLocationReady?.invoke(current)
+                val fallbackLoc = getLiveLocation(context)
+                if (fallbackLoc != null) {
+                    onLocationReady?.invoke(fallbackLoc)
+                }
+                com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
+            }
+            handler.postDelayed(timeoutRunnable, 12000L)
+
+            // Request pinpoint GPS fix
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    1000L,
+                    0f,
+                    singleListener,
+                    Looper.getMainLooper()
+                )
+            }
+            // Also listen to NETWORK_PROVIDER as rapid backup
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                    LocationManager.NETWORK_PROVIDER,
+                    1000L,
+                    0f,
+                    singleListener,
+                    Looper.getMainLooper()
+                )
             }
         } catch (e: Exception) {
             Log.w(TAG, "forceRefreshLocation error: ${e.message}")
+            com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
         }
     }
 
     private fun resolveLocationResult(context: Context, current: Location): LocationResult {
+        val cached = lastResult
+        val prevLoc = lastKnownLocation
+        if (cached != null && prevLoc != null && cached.villageOrPara.isNotEmpty()) {
+            val dist = current.distanceTo(prevLoc)
+            if (dist < STATIONARY_THRESHOLD_M) {
+                // Device is stationary: reuse geocoded address to save network and CPU battery
+                val stationaryRes = cached.copy(
+                    latitude = current.latitude,
+                    longitude = current.longitude,
+                    accuracy = current.accuracy,
+                    timestamp = current.time.takeIf { it > 0 } ?: System.currentTimeMillis()
+                )
+                lastResult = stationaryRes
+                return stationaryRes
+            }
+        }
+
         var villageOrPara = ""
         var districtAndCountry = ""
         var fullAddress = ""
@@ -205,6 +331,7 @@ object LocationTracker {
             Log.w(TAG, "Geocoder error: ${e.message}")
         }
 
+        val speedKmh = if (current.hasSpeed()) current.speed * 3.6f else 0f
         val res = LocationResult(
             latitude = current.latitude,
             longitude = current.longitude,
@@ -212,6 +339,7 @@ object LocationTracker {
             districtAndCountry = districtAndCountry,
             fullAddress = fullAddress,
             accuracy = current.accuracy,
+            speedKmh = speedKmh,
             timestamp = current.time.takeIf { it > 0 } ?: System.currentTimeMillis()
         )
         lastResult = res

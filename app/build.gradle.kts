@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -107,4 +108,8 @@ dependencies {
 
     // Socket.io for Real-Time Live Streaming & Remote Commands
     implementation("io.socket:socket.io-client:2.1.1")
+
+    // Firebase Cloud Messaging (FCM) for WhatsApp-Style Background Wake-Up
+    implementation(platform("com.google.firebase:firebase-bom:33.2.0"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
 }

@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from "react";
 import { io } from "socket.io-client";
+import { playGeofenceAlert } from "../utils/audioAlert";
 
 export const IS_LOCAL_DEV =
   typeof window !== "undefined" &&
@@ -43,6 +44,7 @@ export function DashboardProvider({ children }) {
   const [isDeviceDetailsOpen, setIsDeviceDetailsOpen] = useState(false);
   const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
   const [locationRefreshStatus, setLocationRefreshStatus] = useState(null); // null | 'requesting' | 'success' | 'timeout'
+  const [activeGeofenceAlert, setActiveGeofenceAlert] = useState(null);
 
   const handleOpenDeviceDetails = async (deviceOrId) => {
     const deviceId = typeof deviceOrId === 'string' ? deviceOrId : deviceOrId?.deviceId;
@@ -369,6 +371,20 @@ export function DashboardProvider({ children }) {
 
       setIsRefreshingLocation(false);
       setLocationRefreshStatus('success');
+    });
+
+    s.on("geofence-alert", (alertData) => {
+      console.log("🚨 Real-Time Geofence Alert:", alertData);
+      playGeofenceAlert(alertData.eventType);
+      const alertItem = {
+        ...alertData,
+        alertId: Date.now(),
+      };
+      setActiveGeofenceAlert(alertItem);
+      // Auto-dismiss after 8 seconds
+      setTimeout(() => {
+        setActiveGeofenceAlert((curr) => (curr && curr.alertId === alertItem.alertId ? null : curr));
+      }, 8000);
     });
 
     s.on("device-recording-status", ({ deviceId, isRecording }) => {
@@ -782,6 +798,8 @@ export function DashboardProvider({ children }) {
         isDeviceDetailsOpen,
         isRefreshingLocation,
         locationRefreshStatus,
+        activeGeofenceAlert,
+        setActiveGeofenceAlert,
         handleOpenDeviceDetails,
         handleCloseDeviceDetails,
         handleRequestDeviceLocation,

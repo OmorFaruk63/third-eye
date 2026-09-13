@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Smartphone,
   MapPin,
@@ -29,6 +29,7 @@ import {
   getLocationSecondary,
   formatLocationTimeRange,
 } from '../utils/locationHelper';
+import { consolidateLocationHistory } from '../utils/locationHistoryUtil';
 
 import Dialog from '@mui/material/Dialog';
 import DialogContent from '@mui/material/DialogContent';
@@ -77,7 +78,8 @@ export default function DeviceDetailsModal() {
   const secondaryAddress = getLocationSecondary(d);
   const locationAge = formatLocationAge(d.locationUpdatedAt, d.lastSeen);
 
-  const locationHistory = Array.isArray(d.locationHistory) ? d.locationHistory : [];
+  // Consolidate consecutive duplicate location points into clean timeline items
+  const locationHistory = consolidateLocationHistory(d.locationHistory);
 
   const formatHistoryTime = (dateString) => {
     if (!dateString) return 'Just now';
@@ -499,7 +501,7 @@ export default function DeviceDetailsModal() {
               </Typography>
               <Chip
                 size="small"
-                label={`${locationHistory.length} Visited Points`}
+                label={`${locationHistory.length} Visited ${locationHistory.length === 1 ? 'Place' : 'Places'}`}
                 sx={{
                   height: 18,
                   fontSize: 10,

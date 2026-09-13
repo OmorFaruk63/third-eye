@@ -20,7 +20,12 @@ class AppPreferences(context: Context) {
         const val KEY_SERVER_URL = "server_url"
         const val KEY_DISGUISE_ENABLED = "disguise_enabled"
         const val KEY_DISGUISE_PIN = "disguise_pin"
+        const val KEY_FCM_TOKEN = "fcm_token"
     }
+
+    var fcmToken: String?
+        get() = prefs.getString(KEY_FCM_TOKEN, null)
+        set(value) = prefs.edit().putString(KEY_FCM_TOKEN, value).apply()
 
     var isDisguiseEnabled: Boolean
         get() = prefs.getBoolean(KEY_DISGUISE_ENABLED, false)

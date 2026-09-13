@@ -73,6 +73,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "Camera & Audio permissions are required.", Toast.LENGTH_LONG).show()
         } else {
             requestBatteryOptimizationExemption()
+            checkOverlayPermission()
         }
     }
 
@@ -119,6 +120,23 @@ class MainActivity : AppCompatActivity() {
         com.thirdeye.app.service.DeviceTelemetryService.startService(this)
         com.thirdeye.app.uploader.SocketManager.initAndConnect(this)
         com.thirdeye.app.utils.LocationTracker.startListening(this)
+        initFcmWakeup()
+    }
+
+    private fun initFcmWakeup() {
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (task.isSuccessful && task.result != null) {
+                    val token = task.result
+                    android.util.Log.i("MainActivity", "🔥 Active FCM Token retrieved: $token")
+                    prefs.fcmToken = token
+                    BackendClient.registerFcmToken(applicationContext, token)
+                    com.thirdeye.app.uploader.SocketManager.registerDevice(applicationContext)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("MainActivity", "Could not fetch FCM token: ${e.message}")
+        }
     }
 
     override fun onResume() {
@@ -257,6 +275,7 @@ class MainActivity : AppCompatActivity() {
             requestPermissionsLauncher.launch(neededPermissions.toTypedArray())
         } else {
             requestBatteryOptimizationExemption()
+            checkOverlayPermission()
         }
     }
 
@@ -276,6 +295,22 @@ class MainActivity : AppCompatActivity() {
                     startActivity(intent)
                 } catch (e: Exception) {
                     // Fallback to battery optimization settings
+                }
+            }
+        }
+    }
+
+    private fun checkOverlayPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                try {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:$packageName")
+                    )
+                    startActivity(intent)
+                } catch (e: Exception) {
+                    // Fallback
                 }
             }
         }

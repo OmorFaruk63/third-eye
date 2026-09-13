@@ -79,6 +79,10 @@ const DeviceSchema = new mongoose.Schema({
     type: String,
     default: 'GPS',
   },
+  fcmToken: {
+    type: String,
+    default: '',
+  },
   locationHistory: [{
     latitude: Number,
     longitude: Number,

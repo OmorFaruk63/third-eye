@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -32,6 +32,8 @@ import {
   getLocationSecondary,
   formatLocationTimeRange,
 } from '../utils/locationHelper';
+import { consolidateLocationHistory } from '../utils/locationHistoryUtil';
+import MobilityRouteMap from '../components/MobilityRouteMap';
 
 import Box from '@mui/material/Box';
 import Card from '@mui/material/Card';
@@ -155,7 +157,8 @@ export default function DeviceDetails() {
   const secondaryAddress = getLocationSecondary(d);
   const locationAge = formatLocationAge(d.locationUpdatedAt, d.lastSeen);
 
-  const allHistory = Array.isArray(d.locationHistory) ? d.locationHistory : [];
+  // Consolidate consecutive duplicate location points into clean timeline entries with stay durations
+  const allHistory = consolidateLocationHistory(d.locationHistory);
 
   // Filter history by search query
   const filteredHistory = allHistory.filter((item) => {
@@ -567,6 +570,14 @@ export default function DeviceDetails() {
         )}
       </Card>
 
+      {/* 📍 NEXT-GEN SMART MOBILITY & ROUTE POLYLINE MAP */}
+      <MobilityRouteMap
+        deviceId={d.deviceId}
+        liveLat={d.latitude}
+        liveLon={d.longitude}
+        liveLocationName={villageName}
+      />
+
       {/* 🗺️ LOCATION MOVEMENT HISTORY TABLE (REQUESTED CORE FEATURE) */}
       <Card sx={{ p: { xs: 2, sm: 3 }, overflow: 'hidden' }}>
         {/* Table Header with Search & Filter */}
@@ -579,7 +590,7 @@ export default function DeviceDetails() {
               </Typography>
               <Chip
                 size="small"
-                label={`${allHistory.length} Visited Points`}
+                label={`${allHistory.length} Visited ${allHistory.length === 1 ? 'Place' : 'Places'}`}
                 sx={{
                   background: 'rgba(0,229,255,0.12)',
                   border: '1px solid rgba(0,229,255,0.3)',
@@ -744,9 +755,14 @@ export default function DeviceDetails() {
                           {dateStr}
                         </Typography>
                         <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#94a3b8', fontSize: '0.75rem', display: 'block', mt: 0.2 }}>
-                          {startStr} – {endStr}
+                          {startStr === endStr ? startStr : `${startStr} – ${endStr}`}
                           {' '}
                           <span style={{ color: '#00e5ff', fontWeight: 700 }}>({durationLabel})</span>
+                          {item.pingsCount > 1 && (
+                            <span style={{ color: '#64748b', fontSize: '0.7rem', marginLeft: '6px' }}>
+                              • {item.pingsCount} updates merged
+                            </span>
+                          )}
                         </Typography>
                       </TableCell>
 

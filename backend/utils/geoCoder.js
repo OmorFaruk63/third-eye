@@ -2,7 +2,7 @@ const geoCache = new Map();
 
 /**
  * Reverse geocode latitude/longitude to extract the deepest, innermost micro-location name
- * (e.g. Bibir Bagicha / আনন্দ নগর / Road / Para / Village)
+ * (e.g. Bibir Bagicha / আনন্দ নগর / Road / Para / Village / Thana)
  */
 async function resolveVillageOrPara(latitude, longitude) {
   if (!latitude || !longitude) return null;
@@ -18,7 +18,7 @@ async function resolveVillageOrPara(latitude, longitude) {
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1&accept-language=bn,en`;
     const res = await fetch(url, {
-      headers: { 'User-Agent': 'ThirdEyeAdmin/1.0 (admin@thirdeye.local)' },
+      headers: { 'User-Agent': 'ThirdEyeAdmin/2.0 (admin@thirdeye.local)' },
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -32,7 +32,7 @@ async function resolveVillageOrPara(latitude, longitude) {
     const quarter = (addr.quarter || addr.neighbourhood || addr.hamlet || '').trim();
     const residential = (addr.residential || addr.subdivision || '').trim();
     const village = (addr.village || '').trim();
-    const suburb = (addr.suburb || addr.borough || addr.town || '').trim();
+    const suburb = (addr.suburb || addr.borough || addr.town || addr.city_district || addr.subdistrict || '').trim();
 
     // Collect distinct micro-level tokens in inside-out order
     const microTokens = [];
@@ -57,32 +57,46 @@ async function resolveVillageOrPara(latitude, longitude) {
       microTokens.push(suburb);
     }
 
-    // Take up to 2 most granular leaf tokens (e.g. "Road No. 1, আনন্দ নগর" or "Bibir Bagicha No Road, উত্তর যাত্রাবাড়ী")
-    const villageOrPara = microTokens.slice(0, 2).join(', ') || addr.city_district || addr.subdistrict || 'Pinpoint GPS';
-
-    // Secondary line: Suburb / Thana + District (e.g., "বাড্ডা, ঢাকা জেলা" or "যাত্রাবাড়ী, ঢাকা জেলা")
-    const broaderParts = [];
-    if (suburb && !villageOrPara.includes(suburb)) {
-      broaderParts.push(suburb);
+    // Area name: 2 most granular leaf tokens + suburb/thana if available
+    let primaryArea = microTokens.slice(0, 2).join(', ');
+    if (suburb && primaryArea && !primaryArea.includes(suburb)) {
+      primaryArea = `${primaryArea}, ${suburb}`;
+    } else if (!primaryArea && suburb) {
+      primaryArea = suburb;
     }
+
+    const villageOrPara = primaryArea || addr.city_district || addr.subdistrict || 'Pinpoint GPS';
+
+    // Broader parts: District + Division/Country
+    const broaderParts = [];
     const district = addr.state_district || addr.county || addr.city || '';
-    if (district) {
+    if (district && !villageOrPara.includes(district)) {
       broaderParts.push(district);
     }
-    const country = addr.country || '';
+    const state = addr.state || '';
+    if (state && state !== district && !villageOrPara.includes(state)) {
+      broaderParts.push(state);
+    }
+    const country = addr.country || 'Bangladesh';
     if (country) {
       broaderParts.push(country);
     }
 
     const districtAndCountry = broaderParts.filter(Boolean).join(', ');
-    const fullAddress = data.display_name || '';
+    const fullAddress = data.display_name || [villageOrPara, districtAndCountry].filter(Boolean).join(', ');
 
     const result = {
       villageOrPara: villageOrPara.trim(),
       districtAndCountry: districtAndCountry.trim(),
       locationName: fullAddress,
+      areaName: villageOrPara.trim(),
     };
 
+    if (geoCache.size > 2000) {
+      // Prevent unbound memory growth
+      const firstKey = geoCache.keys().next().value;
+      geoCache.delete(firstKey);
+    }
     geoCache.set(key, result);
     return result;
   } catch (err) {
@@ -92,3 +106,4 @@ async function resolveVillageOrPara(latitude, longitude) {
 }
 
 module.exports = { resolveVillageOrPara };
+

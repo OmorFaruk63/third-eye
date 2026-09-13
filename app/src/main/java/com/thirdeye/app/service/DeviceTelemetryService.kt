@@ -47,6 +47,45 @@ class DeviceTelemetryService : Service() {
         const val ACTION_START = "com.thirdeye.app.ACTION_START_TELEMETRY"
         const val ACTION_STOP = "com.thirdeye.app.ACTION_STOP_TELEMETRY"
 
+        @Volatile
+        private var briefWakeLock: PowerManager.WakeLock? = null
+
+        /**
+         * Acquires a temporary partial WakeLock for short burst operations (heartbeat, command, location lock).
+         * Max timeout defaults to 10 seconds to strictly prevent background battery drain.
+         */
+        fun acquireBriefWakeLock(context: Context, timeoutMs: Long = 10000L) {
+            try {
+                if (briefWakeLock == null) {
+                    synchronized(this) {
+                        if (briefWakeLock == null) {
+                            val pm = context.applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                            briefWakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "thirdeye:brief_wakelock")?.apply {
+                                setReferenceCounted(false)
+                            }
+                        }
+                    }
+                }
+                briefWakeLock?.acquire(timeoutMs)
+                Log.d(TAG, "⚡ Brief WakeLock acquired (${timeoutMs}ms)")
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not acquire brief WakeLock: ${e.message}")
+            }
+        }
+
+        fun releaseBriefWakeLock() {
+            try {
+                briefWakeLock?.let {
+                    if (it.isHeld) {
+                        it.release()
+                        Log.d(TAG, "⚡ Brief WakeLock released")
+                    }
+                }
+            } catch (e: Exception) {
+                // Ignore
+            }
+        }
+
         fun startService(context: Context) {
             val intent = Intent(context, DeviceTelemetryService::class.java).apply {
                 action = ACTION_START
@@ -70,7 +109,6 @@ class DeviceTelemetryService : Service() {
         }
     }
 
-    private var wakeLock: PowerManager.WakeLock? = null
     private var connectivityManager: ConnectivityManager? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var heartbeatThread: Thread? = null
@@ -84,7 +122,8 @@ class DeviceTelemetryService : Service() {
         super.onCreate()
         Log.i(TAG, "DeviceTelemetryService created")
         createSilentNotificationChannel()
-        acquireWakeLock()
+        // Take a brief 5s WakeLock during startup so initialization completes cleanly
+        acquireBriefWakeLock(applicationContext, 5000L)
         registerNetworkCallback()
     }
 
@@ -113,46 +152,45 @@ class DeviceTelemetryService : Service() {
         // 1. Initialize persistent Socket.io connection
         SocketManager.initAndConnect(applicationContext)
 
-        // 2. Start active background GPS tracking
+        // 2. Start smart adaptive background location tracking (low-power idle mode)
         com.thirdeye.app.utils.LocationTracker.startListening(applicationContext)
 
         // 3. Send initial HTTP ping with GPS coordinates & battery
         BackendClient.sendPing(applicationContext)
 
-        // 4. Start background periodic heartbeat thread
+        // 3b. Register / refresh FCM wake-up token
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                if (task.isSuccessful && task.result != null) {
+                    val token = task.result
+                    val prefs = com.thirdeye.app.utils.AppPreferences(applicationContext)
+                    prefs.fcmToken = token
+                    BackendClient.registerFcmToken(applicationContext, token)
+                    SocketManager.registerDevice(applicationContext)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed retrieving FCM token: ${e.message}")
+        }
+
+        // 4. Background watchdog: monitors socket connectivity with low wake-frequency
         heartbeatThread?.interrupt()
         heartbeatThread = Thread {
             try {
-                var cycleCount = 0
                 while (isRunning && !Thread.currentThread().isInterrupted) {
-                    Thread.sleep(15000) // Every 15 seconds (faster reconnect detection)
+                    val isConnected = SocketManager.isConnected()
 
-                    cycleCount++
-
-                    // CRITICAL: Renew WakeLock every 2 hours to prevent TECNO HiOS from
-                    // revoking it automatically. Re-acquire if released for any reason.
-                    if (cycleCount % 480 == 0) { // every 480 cycles × 15s = 2 hours
-                        try {
-                            val wl = wakeLock
-                            if (wl != null && !wl.isHeld) {
-                                @Suppress("WakelockTimeout")
-                                wl.acquire()
-                                Log.i(TAG, "🔄 WakeLock re-acquired")
-                            }
-                        } catch (e: Exception) {
-                            Log.w(TAG, "WakeLock renew error: ${e.message}")
-                        }
-                    }
-
-                    // Ensure socket is alive — reconnect immediately if dropped
-                    if (!SocketManager.isConnected()) {
-                        Log.d(TAG, "⚠️ Socket disconnected, reconnecting...")
+                    if (!isConnected) {
+                        Log.d(TAG, "⚠️ Socket disconnected, reconnecting and sending fallback ping...")
+                        acquireBriefWakeLock(applicationContext, 10000L)
                         SocketManager.reconnect(applicationContext)
-                    }
-
-                    // Every 45 seconds (every 3rd cycle), send full HTTP ping to keep MongoDB lastSeen fresh
-                    if (cycleCount % 3 == 0) {
                         BackendClient.sendPing(applicationContext)
+                        // Retry sooner when disconnected
+                        Thread.sleep(30000)
+                    } else {
+                        // When socket is healthy, SocketManager handles heartbeats over WebSocket.
+                        // Guardian sleeps 60 seconds to allow deep CPU sleep.
+                        Thread.sleep(60000)
                     }
                 }
             } catch (e: InterruptedException) {
@@ -160,28 +198,11 @@ class DeviceTelemetryService : Service() {
             }
         }.apply {
             isDaemon = true
-            name = "TelemetryHeartbeatThread"
+            name = "TelemetryGuardianThread"
             start()
         }
 
-        Log.i(TAG, "✅ Telemetry engine running 24/7 with HiOS freeze protection")
-    }
-
-    @SuppressLint("WakelockTimeout")
-    private fun acquireWakeLock() {
-        try {
-            val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "thirdeye:telemetry_wakelock").apply {
-                setReferenceCounted(false)
-                // CRITICAL FIX: Indefinite WakeLock — TECNO HiOS hibernation bypass.
-                // Without this, HiOS freezes the process within ~10s of screen-off,
-                // killing the socket connection and blocking all remote commands.
-                acquire()
-            }
-            Log.i(TAG, "✅ Indefinite PARTIAL_WAKE_LOCK acquired — HiOS freeze bypassed")
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not acquire partial WakeLock: ${e.message}")
-        }
+        Log.i(TAG, "✅ Telemetry engine running with Smart Battery Saver & HiOS freeze protection")
     }
 
     private fun registerNetworkCallback() {
@@ -196,6 +217,9 @@ class DeviceTelemetryService : Service() {
                     Log.i(TAG, "Network became available, reconnecting telemetry...")
                     SocketManager.reconnect(applicationContext)
                     BackendClient.sendPing(applicationContext)
+                    Thread {
+                        BackendClient.syncOfflineLocations(applicationContext)
+                    }.start()
                 }
 
                 override fun onLost(network: Network) {
@@ -331,11 +355,7 @@ class DeviceTelemetryService : Service() {
             // Ignore
         }
 
-        try {
-            wakeLock?.let { if (it.isHeld) it.release() }
-        } catch (e: Exception) {
-            // Ignore
-        }
+        releaseBriefWakeLock()
 
         Log.i(TAG, "DeviceTelemetryService destroyed")
     }

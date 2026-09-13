@@ -74,7 +74,7 @@ router.post('/upload', upload.single('video'), async (req, res) => {
       driveFileId: driveResult.driveFileId,
       driveViewLink: driveResult.driveViewLink,
       driveDownloadLink: driveResult.driveDownloadLink,
-      localFilePath: null,
+      localFilePath: driveResult.driveFileId ? null : localFilePath,
       fileSizeBytes,
       durationSeconds: Number(durationSeconds) || 0,
       quality,
@@ -139,7 +139,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Admin: Stream video directly from Google Drive (supports HTTP 206 Range for seeking)
+// Admin: Stream video directly from Google Drive or Local Disk (supports HTTP 206 Range for seeking)
 router.get('/stream/:id', async (req, res) => {
   try {
     const recording = await Recording.findById(req.params.id);
@@ -147,15 +147,67 @@ router.get('/stream/:id', async (req, res) => {
       return res.status(404).send('Recording not found');
     }
 
-    if (!recording.driveFileId) {
-      if (recording.driveViewLink) {
-        return res.redirect(recording.driveViewLink);
+    const possibleLocalFile = recording.fileName ? path.join(uploadsDir, recording.fileName) : null;
+    const hasLocalFile = possibleLocalFile && fs.existsSync(possibleLocalFile);
+
+    // If Google Drive file exists, attempt streaming from Drive
+    if (recording.driveFileId) {
+      try {
+        return await googleDriveService.streamVideo(recording.driveFileId, req, res);
+      } catch (driveErr) {
+        console.warn('⚠️ Google Drive stream failed, falling back to local if available:', driveErr.message);
+        if (!hasLocalFile) {
+          if (recording.driveViewLink) {
+            return res.redirect(recording.driveViewLink);
+          }
+          return res.status(502).send('Streaming error from Google Drive: ' + driveErr.message);
+        }
       }
-      return res.status(404).send('Google Drive video not found for this recording');
     }
 
-    // Stream directly from Google Drive API
-    await googleDriveService.streamVideo(recording.driveFileId, req, res);
+    // Stream from local backend/uploads/ storage with HTTP 206 Partial Content (Range) support
+    if (hasLocalFile) {
+      const stat = fs.statSync(possibleLocalFile);
+      const fileSize = stat.size;
+      const range = req.headers.range;
+
+      if (range) {
+        const parts = range.replace(/bytes=/, '').split('-');
+        const start = parseInt(parts[0], 10);
+        const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+        if (start >= fileSize || end >= fileSize) {
+          res.setHeader('Content-Range', `bytes */${fileSize}`);
+          return res.status(416).send('Requested range not satisfiable');
+        }
+
+        const chunksize = end - start + 1;
+        const file = fs.createReadStream(possibleLocalFile, { start, end });
+        const head = {
+          'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': chunksize,
+          'Content-Type': 'video/mp4',
+        };
+
+        res.writeHead(206, head);
+        return file.pipe(res);
+      } else {
+        const head = {
+          'Content-Length': fileSize,
+          'Content-Type': 'video/mp4',
+          'Accept-Ranges': 'bytes',
+        };
+        res.writeHead(200, head);
+        return fs.createReadStream(possibleLocalFile).pipe(res);
+      }
+    }
+
+    if (recording.driveViewLink) {
+      return res.redirect(recording.driveViewLink);
+    }
+
+    return res.status(404).send('Video file not found on server or Google Drive');
   } catch (error) {
     console.error('Stream error:', error);
     if (!res.headersSent) {
@@ -164,19 +216,33 @@ router.get('/stream/:id', async (req, res) => {
   }
 });
 
-// Admin: Download video directly from Google Drive
+// Admin: Download video directly from Google Drive or local server
 router.get('/download/:id', async (req, res) => {
   try {
     const recording = await Recording.findById(req.params.id);
     if (!recording) return res.status(404).send('Recording not found');
 
+    const possibleLocalFile = recording.fileName ? path.join(uploadsDir, recording.fileName) : null;
+    const hasLocalFile = possibleLocalFile && fs.existsSync(possibleLocalFile);
+
     if (recording.driveFileId) {
-      res.setHeader('Content-Disposition', `attachment; filename="${recording.fileName || 'video.mp4'}"`);
-      return await googleDriveService.streamVideo(recording.driveFileId, req, res);
-    } else if (recording.driveDownloadLink) {
+      try {
+        res.setHeader('Content-Disposition', `attachment; filename="${recording.fileName || 'video.mp4'}"`);
+        return await googleDriveService.streamVideo(recording.driveFileId, req, res);
+      } catch (driveErr) {
+        console.warn('⚠️ Google Drive download failed, falling back to local if available:', driveErr.message);
+      }
+    }
+
+    if (hasLocalFile) {
+      return res.download(possibleLocalFile, recording.fileName || 'video.mp4');
+    }
+
+    if (recording.driveDownloadLink) {
       return res.redirect(recording.driveDownloadLink);
     }
-    res.status(404).send('Google Drive file not found');
+
+    res.status(404).send('Video file not found for download');
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -45,6 +45,7 @@ export default function Layout() {
     fetchData, handleStartLiveStream, handleStopLiveStream, handleSwitchCamera,
     handleTakeSnapshot, toggleAudioMute, formatSize,
     handleToggleRecordingFromLive,
+    activeGeofenceAlert, setActiveGeofenceAlert,
   } = useDashboard();
 
   useEffect(() => {
@@ -448,6 +449,79 @@ export default function Layout() {
 
         {/* Page Content */}
         <Box component="main" sx={{ flex: 1, overflow: 'auto', p: { xs: 1.5, sm: 2.5, md: 3 } }}>
+          {/* 🚨 Real-time Geofence Alert Banner */}
+          {activeGeofenceAlert && (
+            <Box
+              sx={{
+                mb: 2.5,
+                p: 2,
+                borderRadius: 2.5,
+                background: activeGeofenceAlert.eventType === 'ENTER'
+                  ? 'linear-gradient(135deg, rgba(0, 230, 118, 0.2) 0%, rgba(13, 22, 38, 0.95) 100%)'
+                  : 'linear-gradient(135deg, rgba(255, 23, 68, 0.2) 0%, rgba(13, 22, 38, 0.95) 100%)',
+                border: activeGeofenceAlert.eventType === 'ENTER'
+                  ? '1px solid rgba(0, 230, 118, 0.5)'
+                  : '1px solid rgba(255, 23, 68, 0.5)',
+                boxShadow: activeGeofenceAlert.eventType === 'ENTER'
+                  ? '0 0 24px rgba(0, 230, 118, 0.3)'
+                  : '0 0 24px rgba(255, 23, 68, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 2,
+                animation: 'fade-in 0.3s ease-out',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box
+                  sx={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    bgcolor: activeGeofenceAlert.eventType === 'ENTER' ? 'rgba(0, 230, 118, 0.25)' : 'rgba(255, 23, 68, 0.25)',
+                    color: activeGeofenceAlert.eventType === 'ENTER' ? '#00e676' : '#ff5252',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 20,
+                  }}
+                >
+                  {activeGeofenceAlert.eventType === 'ENTER' ? '📍' : '⚠️'}
+                </Box>
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: 14, color: activeGeofenceAlert.eventType === 'ENTER' ? '#00e676' : '#ff5252' }}>
+                      GEOFENCE {activeGeofenceAlert.eventType === 'ENTER' ? 'ZONE ENTERED' : 'ZONE EXITED'}
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={activeGeofenceAlert.zoneName || 'Safe Zone'}
+                      sx={{
+                        height: 20,
+                        fontSize: 10.5,
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        bgcolor: 'rgba(255,255,255,0.08)',
+                        color: '#fff',
+                      }}
+                    />
+                  </Box>
+                  <Typography variant="body2" sx={{ color: '#cbd5e1', mt: 0.2 }}>
+                    {activeGeofenceAlert.message || `Device ${activeGeofenceAlert.deviceId} triggered geofence boundary`}
+                  </Typography>
+                </Box>
+              </Box>
+
+              <IconButton
+                size="small"
+                onClick={() => setActiveGeofenceAlert(null)}
+                sx={{ color: '#94a3b8', '&:hover': { color: '#fff' } }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          )}
+
           <Outlet />
         </Box>
       </Box>
