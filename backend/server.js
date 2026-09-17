@@ -6,8 +6,10 @@ if (fs.existsSync('/etc/secrets/.env')) {
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const compression = require('compression');
 const path = require('path');
 const mongoose = require('mongoose');
+
 
 const http = require('http');
 const { Server } = require('socket.io');
@@ -34,8 +36,10 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/thirde
 
 // Middleware
 app.use(cors({ origin: '*' }));
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
 app.use(morgan('dev'));
 
 // Static files for uploads

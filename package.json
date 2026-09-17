@@ -1,0 +1,15 @@
+{
+  "name": "third-eye-workspace",
+  "version": "1.0.0",
+  "description": "Third Eye - Intelligent Surveillance & Stealth Recording Ecosystem",
+  "scripts": {
+    "dev": "npm run dev:admin",
+    "dev:admin": "npm --prefix admin-dashboard run dev",
+    "build:admin": "npm --prefix admin-dashboard run build",
+    "start:backend": "npm --prefix backend start",
+    "dev:backend": "npm --prefix backend run dev"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

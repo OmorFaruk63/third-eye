@@ -60,4 +60,8 @@ const RecordingSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
+RecordingSchema.index({ deviceId: 1, createdAt: -1 });
+RecordingSchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('Recording', RecordingSchema);
+

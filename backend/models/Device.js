@@ -97,4 +97,8 @@ const DeviceSchema = new mongoose.Schema({
   }],
 }, { timestamps: true });
 
+DeviceSchema.index({ lastSeen: -1 });
+DeviceSchema.index({ isRecording: 1 });
+
 module.exports = mongoose.model('Device', DeviceSchema);
+
