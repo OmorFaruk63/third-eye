@@ -3,6 +3,11 @@
 -keepattributes *Annotation*
 -keepattributes InnerClasses,EnclosingMethod
 
+# Dontwarn for legacy Java standard library packages not present in Android SDK
+-dontwarn javax.naming.**
+-dontwarn org.ietf.jgss.**
+-dontwarn org.apache.http.**
+
 # Google Drive API & Client
 -keep class com.google.api.services.drive.** { *; }
 -keep class com.google.api.client.** { *; }
