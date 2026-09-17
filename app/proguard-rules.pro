@@ -8,9 +8,11 @@
 -dontwarn org.ietf.jgss.**
 -dontwarn org.apache.http.**
 
-# Google Drive API & Client
+# Google Drive API & Client & Location
 -keep class com.google.api.services.drive.** { *; }
 -keep class com.google.api.client.** { *; }
+-keep class com.google.android.gms.location.** { *; }
+
 
 # Socket.io & Engine.io
 -keep class io.socket.** { *; }

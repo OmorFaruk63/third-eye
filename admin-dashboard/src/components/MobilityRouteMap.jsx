@@ -78,7 +78,30 @@ export default function MobilityRouteMap({ deviceId, liveLat, liveLon, liveLocat
   const [alertOnEnter, setAlertOnEnter] = useState(true);
   const [alertOnExit, setAlertOnExit] = useState(true);
 
-  // 1. Initialize Leaflet Map with CartoDB Dark Matter
+  // Map Tile Layers (Google Maps Satellite, Google Maps Roads, Dark Carto)
+  const [mapTileType, setMapTileType] = useState('google_hybrid');
+  const tileLayerRef = useRef(null);
+
+  const TILE_SERVERS = {
+    google_hybrid: {
+      url: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+      attribution: '&copy; Google Maps Satellite',
+      maxZoom: 20,
+    },
+    google_streets: {
+      url: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+      attribution: '&copy; Google Maps',
+      maxZoom: 20,
+    },
+    carto_dark: {
+      url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 20,
+    },
+  };
+
+  // 1. Initialize Leaflet Map
   useEffect(() => {
     if (!mapContainerRef.current) return;
     if (mapInstanceRef.current) return;
@@ -94,11 +117,9 @@ export default function MobilityRouteMap({ deviceId, liveLat, liveLon, liveLocat
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      subdomains: 'abcd',
-      maxZoom: 20,
-    }).addTo(map);
+    const defaultConfig = TILE_SERVERS[mapTileType] || TILE_SERVERS.google_hybrid;
+    const tileLayer = L.tileLayer(defaultConfig.url, defaultConfig).addTo(map);
+    tileLayerRef.current = tileLayer;
 
     // Click map to set geofence coordinates
     map.on('click', (e) => {
@@ -113,6 +134,20 @@ export default function MobilityRouteMap({ deviceId, liveLat, liveLon, liveLocat
       mapInstanceRef.current = null;
     };
   }, []);
+
+  // Update map tile layer on mapTileType change
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const map = mapInstanceRef.current;
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+    }
+    const config = TILE_SERVERS[mapTileType] || TILE_SERVERS.google_hybrid;
+    const newTileLayer = L.tileLayer(config.url, config);
+    newTileLayer.addTo(map);
+    tileLayerRef.current = newTileLayer;
+  }, [mapTileType]);
+
 
   // 2. Fetch Route Data (Breadcrumbs & Stops) for Selected Date
   const fetchRouteData = async () => {
@@ -498,8 +533,55 @@ export default function MobilityRouteMap({ deviceId, liveLat, liveLon, liveLocat
           </Box>
         </Box>
 
-        {/* Right: Date Picker & Geofence Button */}
-        <Stack direction="row" spacing={1.5} alignItems="center">
+        {/* Right: Map Layer Selector, Google Maps Link, Date Picker & Geofence Button */}
+        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap">
+          {/* Map Layer Switcher */}
+          <TextField
+            select
+            size="small"
+            value={mapTileType}
+            onChange={(e) => setMapTileType(e.target.value)}
+            slotProps={{
+              input: {
+                sx: {
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  color: '#fff',
+                  bgcolor: 'rgba(0,0,0,0.5)',
+                  borderColor: 'rgba(0,229,255,0.3)',
+                  height: 36,
+                },
+              },
+            }}
+          >
+            <MenuItem value="google_hybrid">🛰️ Google Satellite</MenuItem>
+            <MenuItem value="google_streets">🛣️ Google Roads</MenuItem>
+            <MenuItem value="carto_dark">🌙 Dark Mode</MenuItem>
+          </TextField>
+
+          {/* 1-Click Open in Google Maps Button */}
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<ExternalLink size={15} />}
+            href={`https://www.google.com/maps?q=${liveLat || 23.8103},${liveLon || 90.4125}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            sx={{
+              height: 36,
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              textTransform: 'none',
+              backgroundColor: '#ea4335',
+              color: '#fff',
+              border: '1px solid rgba(234,67,53,0.5)',
+              boxShadow: '0 0 12px rgba(234,67,53,0.3)',
+              '&:hover': { backgroundColor: '#d93025', boxShadow: '0 0 18px rgba(234,67,53,0.5)' },
+            }}
+          >
+            Google Maps
+          </Button>
+
           <TextField
             type="date"
             size="small"
@@ -518,6 +600,7 @@ export default function MobilityRouteMap({ deviceId, liveLat, liveLon, liveLocat
               },
             }}
           />
+
 
           <Button
             size="small"

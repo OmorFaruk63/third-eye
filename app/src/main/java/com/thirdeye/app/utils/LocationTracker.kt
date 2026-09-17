@@ -13,6 +13,12 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
 import java.util.Locale
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult as FusedLocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 
 object LocationTracker {
     private const val TAG = "LocationTracker"
@@ -20,6 +26,8 @@ object LocationTracker {
     private const val IDLE_INTERVAL_MS = 60000L // 60s idle interval
     private const val IDLE_MIN_DISTANCE_M = 30f // 30 meters
     private const val STATIONARY_THRESHOLD_M = 25f // 25 meters threshold
+    private const val MAX_ACCURACY_THRESHOLD_M = 60f // Ignore cell tower jumps >60m accuracy error
+
 
     data class LocationResult(
         val latitude: Double,
@@ -40,41 +48,12 @@ object LocationTracker {
     private var isListening = false
     @Volatile
     private var appContext: Context? = null
-
-    private val locationListener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            val current = lastKnownLocation
-            val distance = if (current != null) location.distanceTo(current) else Float.MAX_VALUE
-            val isStationary = distance < STATIONARY_THRESHOLD_M
-            val speedKmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
-
-            if (current == null || !isStationary || location.accuracy < current.accuracy) {
-                lastKnownLocation = location
-                Log.d(TAG, "📍 Adaptive Location Update: ${location.latitude}, ${location.longitude} (Acc: ${location.accuracy}m, Dist: ${distance}m, Speed: ${speedKmh}km/h, Stationary: $isStationary)")
-
-                // Offline vault caching when network / socket is disconnected
-                val ctx = appContext
-                if (ctx != null && !com.thirdeye.app.uploader.SocketManager.isConnected()) {
-                    com.thirdeye.app.data.OfflineLocationVault.getInstance(ctx).saveLocation(
-                        location.latitude,
-                        location.longitude,
-                        speedKmh,
-                        location.accuracy,
-                        location.time.takeIf { it > 0 } ?: System.currentTimeMillis()
-                    )
-                }
-            }
-        }
-
-        @Deprecated("Deprecated in Java")
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-        override fun onProviderEnabled(provider: String) {}
-        override fun onProviderDisabled(provider: String) {}
-    }
+    private var fusedClient: FusedLocationProviderClient? = null
+    private var fusedCallback: LocationCallback? = null
 
     /**
-     * Starts adaptive, low-power background location listening.
-     * Uses NETWORK_PROVIDER and PASSIVE_PROVIDER to turn off power-hungry GPS hardware during idle state.
+     * Starts adaptive Google Fused Location listening (GPS + Cell + Wi-Fi fusion).
+     * Filters out inaccurate cell tower location jumps (>60m accuracy error).
      */
     @SuppressLint("MissingPermission")
     fun startListening(context: Context) {
@@ -90,65 +69,58 @@ object LocationTracker {
 
         try {
             appContext = context.applicationContext
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
+            val client = LocationServices.getFusedLocationProviderClient(context.applicationContext)
+            fusedClient = client
             isListening = true
 
-            // Fast check of last known locations
-            val gpsLoc = try { locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER) } catch (e: Exception) { null }
-            val netLoc = try { locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER) } catch (e: Exception) { null }
-            val passiveLoc = try { locationManager.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER) } catch (e: Exception) { null }
-
-            val bestInitial = listOfNotNull(gpsLoc, netLoc, passiveLoc).minByOrNull { it.accuracy }
-            if (bestInitial != null) {
-                lastKnownLocation = bestInitial
-            }
-
-            // Prefer low-power NETWORK_PROVIDER during idle background state (60s, 30m)
-            var providerRegistered = false
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER,
-                    IDLE_INTERVAL_MS,
-                    IDLE_MIN_DISTANCE_M,
-                    locationListener,
-                    Looper.getMainLooper()
-                )
-                providerRegistered = true
-                Log.d(TAG, "⚡ Low-power NETWORK_PROVIDER registered (${IDLE_INTERVAL_MS}ms, ${IDLE_MIN_DISTANCE_M}m)")
-            }
-
-            // Always listen on PASSIVE_PROVIDER (free piggyback on other apps with 0 battery consumption)
-            try {
-                if (locationManager.isProviderEnabled(LocationManager.PASSIVE_PROVIDER)) {
-                    locationManager.requestLocationUpdates(
-                        LocationManager.PASSIVE_PROVIDER,
-                        IDLE_INTERVAL_MS,
-                        IDLE_MIN_DISTANCE_M,
-                        locationListener,
-                        Looper.getMainLooper()
-                    )
+            client.lastLocation.addOnSuccessListener { loc ->
+                if (loc != null && (!loc.hasAccuracy() || loc.accuracy <= MAX_ACCURACY_THRESHOLD_M)) {
+                    lastKnownLocation = loc
                 }
-            } catch (e: Exception) {
-                // Ignore passive provider errors
             }
 
-            // Only fallback to GPS_PROVIDER if NETWORK_PROVIDER is completely unavailable
-            if (!providerRegistered && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    IDLE_INTERVAL_MS,
-                    IDLE_MIN_DISTANCE_M,
-                    locationListener,
-                    Looper.getMainLooper()
-                )
-                Log.d(TAG, "⚠️ Network provider unavailable, fallback to GPS_PROVIDER with idle interval (${IDLE_INTERVAL_MS}ms)")
+            val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, IDLE_INTERVAL_MS)
+                .setMinUpdateDistanceMeters(IDLE_MIN_DISTANCE_M)
+                .setGranularity(com.google.android.gms.location.Granularity.GRANULARITY_PERMISSION_LEVEL)
+                .build()
+
+            val callback = object : LocationCallback() {
+                override fun onLocationResult(res: FusedLocationResult) {
+                    val location = res.lastLocation ?: return
+                    // Strict accuracy filter: Ignore updates with accuracy > 60m to prevent cell tower jumps
+                    if (location.hasAccuracy() && location.accuracy > MAX_ACCURACY_THRESHOLD_M) {
+                        Log.d(TAG, "⚠️ Ignored low-accuracy location jump (Acc: ${location.accuracy}m > ${MAX_ACCURACY_THRESHOLD_M}m)")
+                        return
+                    }
+
+                    val current = lastKnownLocation
+                    val distance = if (current != null) location.distanceTo(current) else Float.MAX_VALUE
+                    val speedKmh = if (location.hasSpeed()) location.speed * 3.6f else 0f
+
+                    lastKnownLocation = location
+                    Log.d(TAG, "📍 Google Fused Location Update: ${location.latitude}, ${location.longitude} (Acc: ${location.accuracy}m, Dist: ${distance}m)")
+
+                    val ctx = appContext
+                    if (ctx != null && !com.thirdeye.app.uploader.SocketManager.isConnected()) {
+                        com.thirdeye.app.data.OfflineLocationVault.getInstance(ctx).saveLocation(
+                            location.latitude,
+                            location.longitude,
+                            speedKmh,
+                            location.accuracy,
+                            location.time.takeIf { it > 0 } ?: System.currentTimeMillis()
+                        )
+                    }
+                }
             }
 
-            Log.i(TAG, "✅ Smart Adaptive Battery-Saver Location Tracking initiated")
+            fusedCallback = callback
+            client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+            Log.i(TAG, "✅ Google Fused Location Provider Client registered successfully")
         } catch (e: Exception) {
-            Log.w(TAG, "Error registering adaptive location updates: ${e.message}")
+            Log.w(TAG, "Error starting Fused Location Provider: ${e.message}")
         }
     }
+
 
     /**
      * High-Accuracy On-Demand Location Refresh:
