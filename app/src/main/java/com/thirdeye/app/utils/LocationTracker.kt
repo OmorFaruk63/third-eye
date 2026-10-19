@@ -79,8 +79,9 @@ object LocationTracker {
                 }
             }
 
-            val request = LocationRequest.Builder(Priority.PRIORITY_BALANCED_POWER_ACCURACY, IDLE_INTERVAL_MS)
+            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, IDLE_INTERVAL_MS)
                 .setMinUpdateDistanceMeters(IDLE_MIN_DISTANCE_M)
+                .setMinUpdateIntervalMillis(15000L)
                 .setGranularity(com.google.android.gms.location.Granularity.GRANULARITY_PERMISSION_LEVEL)
                 .build()
 
@@ -115,7 +116,7 @@ object LocationTracker {
 
             fusedCallback = callback
             client.requestLocationUpdates(request, callback, Looper.getMainLooper())
-            Log.i(TAG, "✅ Google Fused Location Provider Client registered successfully")
+            Log.i(TAG, "✅ Google Fused High-Accuracy Location Client registered successfully")
         } catch (e: Exception) {
             Log.w(TAG, "Error starting Fused Location Provider: ${e.message}")
         }
@@ -124,9 +125,9 @@ object LocationTracker {
 
     /**
      * High-Accuracy On-Demand Location Refresh:
-     * When requested from Admin Dashboard ('request-device-location'), immediately fires GPS_PROVIDER
-     * with a temporary 12s safety timeout and WakeLock. Once pinpoint fix is acquired, GPS hardware
-     * is immediately released and state returns to low-power idle mode.
+     * When requested from Admin Dashboard ('request-device-location'), queries Google Play Services
+     * FusedLocationProviderClient.getCurrentLocation(PRIORITY_HIGH_ACCURACY) and GPS hardware in parallel.
+     * Only accepts pinpoint fixes (<30m) or the best recorded satellite position.
      */
     @SuppressLint("MissingPermission")
     fun forceRefreshLocation(context: Context, onLocationReady: ((LocationResult) -> Unit)? = null) {
@@ -139,38 +140,66 @@ object LocationTracker {
         }
 
         try {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager ?: return
-            // Ensure background listener is running
             startListening(context)
-
-            // Acquire brief wake lock for GPS pinpoint lock
             com.thirdeye.app.service.DeviceTelemetryService.acquireBriefWakeLock(context, 15000L)
 
             val handler = android.os.Handler(Looper.getMainLooper())
             var isCompleted = false
+            var bestLoc: Location? = null
 
+            val client = fusedClient ?: LocationServices.getFusedLocationProviderClient(context.applicationContext)
+            val cts = com.google.android.gms.tasks.CancellationTokenSource()
+
+            fun deliverResult(loc: Location) {
+                if (isCompleted) return
+                isCompleted = true
+                cts.cancel()
+                lastKnownLocation = loc
+                Log.i(TAG, "🎯 High-accuracy pinpoint GPS fix acquired: ${loc.latitude}, ${loc.longitude} (Acc: ${loc.accuracy}m)")
+
+                Thread {
+                    try {
+                        val res = resolveLocationResult(context, loc)
+                        handler.post {
+                            onLocationReady?.invoke(res)
+                            com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
+                        }
+                    } catch (e: Exception) {
+                        com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
+                    }
+                }.start()
+            }
+
+            // 1. Google Play Services Fused Location: Pinpoint single-shot fix
+            client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, cts.token)
+                .addOnSuccessListener { loc ->
+                    if (loc != null) {
+                        if (bestLoc == null || (loc.hasAccuracy() && loc.accuracy < (bestLoc?.accuracy ?: Float.MAX_VALUE))) {
+                            bestLoc = loc
+                        }
+                        if (!loc.hasAccuracy() || loc.accuracy <= 30f) {
+                            deliverResult(loc)
+                        }
+                    }
+                }
+
+            // 2. Hardware GPS Provider listener
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
             val singleListener = object : LocationListener {
                 override fun onLocationChanged(loc: Location) {
                     if (isCompleted) return
-                    isCompleted = true
-                    try {
-                        locationManager.removeUpdates(this)
-                    } catch (e: Exception) {}
 
-                    lastKnownLocation = loc
-                    Log.i(TAG, "🎯 High-accuracy on-demand GPS fix acquired: ${loc.latitude}, ${loc.longitude} (Acc: ${loc.accuracy}m)")
+                    if (bestLoc == null || (loc.hasAccuracy() && loc.accuracy < (bestLoc?.accuracy ?: Float.MAX_VALUE))) {
+                        bestLoc = loc
+                    }
 
-                    Thread {
+                    // Only complete immediately if satellite-grade accuracy (<= 25m)
+                    if (loc.hasAccuracy() && loc.accuracy <= 25f) {
                         try {
-                            val res = resolveLocationResult(context, loc)
-                            handler.post {
-                                onLocationReady?.invoke(res)
-                                com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
-                            }
-                        } catch (e: Exception) {
-                            com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
-                        }
-                    }.start()
+                            locationManager?.removeUpdates(this)
+                        } catch (e: Exception) {}
+                        deliverResult(loc)
+                    }
                 }
 
                 @Deprecated("Deprecated in Java")
@@ -179,42 +208,49 @@ object LocationTracker {
                 override fun onProviderDisabled(provider: String) {}
             }
 
-            // Safety timeout runnable (12 seconds) in case GPS satellite lock is obstructed indoors
+            // 12s safety timeout
             val timeoutRunnable = Runnable {
                 if (isCompleted) return@Runnable
-                isCompleted = true
-                Log.w(TAG, "⏱️ GPS on-demand timeout (12s) reached, falling back to best known location")
                 try {
-                    locationManager.removeUpdates(singleListener)
+                    locationManager?.removeUpdates(singleListener)
                 } catch (e: Exception) {}
+                cts.cancel()
 
-                val fallbackLoc = getLiveLocation(context)
-                if (fallbackLoc != null) {
-                    onLocationReady?.invoke(fallbackLoc)
+                val locToUse = bestLoc ?: getLiveLocation(context)?.let {
+                    val l = Location("fallback")
+                    l.latitude = it.latitude
+                    l.longitude = it.longitude
+                    l.accuracy = it.accuracy
+                    l
                 }
-                com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
+
+                if (locToUse != null) {
+                    deliverResult(locToUse)
+                } else {
+                    com.thirdeye.app.service.DeviceTelemetryService.releaseBriefWakeLock()
+                }
             }
             handler.postDelayed(timeoutRunnable, 12000L)
 
-            // Request pinpoint GPS fix
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    1000L,
-                    0f,
-                    singleListener,
-                    Looper.getMainLooper()
-                )
-            }
-            // Also listen to NETWORK_PROVIDER as rapid backup
-            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.NETWORK_PROVIDER,
-                    1000L,
-                    0f,
-                    singleListener,
-                    Looper.getMainLooper()
-                )
+            if (locationManager != null) {
+                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    locationManager.requestLocationUpdates(
+                        LocationManager.GPS_PROVIDER,
+                        1000L,
+                        0f,
+                        singleListener,
+                        Looper.getMainLooper()
+                    )
+                }
+                if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                    locationManager.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER,
+                        1000L,
+                        0f,
+                        singleListener,
+                        Looper.getMainLooper()
+                    )
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "forceRefreshLocation error: ${e.message}")
