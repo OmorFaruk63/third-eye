@@ -28,6 +28,40 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 }, // 500MB max
 });
 
+/**
+ * Robust helper to resolve actual local video file on disk.
+ * Handles discrepancies between client original fileName, multer rec-* generated names,
+ * and environment-specific absolute paths (e.g. Render vs Local Dev).
+ */
+function getLocalVideoFilePath(recording) {
+  if (!recording) return null;
+
+  // 1. Direct path check if stored absolute path exists on disk
+  if (recording.localFilePath && fs.existsSync(recording.localFilePath)) {
+    return recording.localFilePath;
+  }
+
+  // 2. Basename of localFilePath inside current uploadsDir
+  if (recording.localFilePath) {
+    const baseName = path.basename(recording.localFilePath);
+    const candidate = path.join(uploadsDir, baseName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  // 3. Check fileName directly inside current uploadsDir
+  if (recording.fileName) {
+    const candidate = path.join(uploadsDir, recording.fileName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // NEW: Step 1 – Android app registers recording METADATA only (no file upload)
 // Called immediately after recording stops. Video stays on device until admin approves.
@@ -354,8 +388,7 @@ router.get('/stream/:id', async (req, res) => {
       return res.status(404).send('Recording not found');
     }
 
-    const possibleLocalFile = recording.fileName ? path.join(uploadsDir, recording.fileName) : null;
-    const hasLocalFile = possibleLocalFile && fs.existsSync(possibleLocalFile);
+    const localFile = getLocalVideoFilePath(recording);
 
     // If Google Drive file exists, attempt streaming from Drive
     if (recording.driveFileId) {
@@ -363,7 +396,7 @@ router.get('/stream/:id', async (req, res) => {
         return await googleDriveService.streamVideo(recording.driveFileId, req, res);
       } catch (driveErr) {
         console.warn('⚠️ Google Drive stream failed, falling back to local if available:', driveErr.message);
-        if (!hasLocalFile) {
+        if (!localFile) {
           if (recording.driveViewLink) {
             return res.redirect(recording.driveViewLink);
           }
@@ -373,8 +406,8 @@ router.get('/stream/:id', async (req, res) => {
     }
 
     // Stream from local backend/uploads/ storage with HTTP 206 Partial Content (Range) support
-    if (hasLocalFile) {
-      const stat = fs.statSync(possibleLocalFile);
+    if (localFile) {
+      const stat = fs.statSync(localFile);
       const fileSize = stat.size;
       const range = req.headers.range;
 
@@ -389,7 +422,7 @@ router.get('/stream/:id', async (req, res) => {
         }
 
         const chunksize = end - start + 1;
-        const file = fs.createReadStream(possibleLocalFile, { start, end });
+        const file = fs.createReadStream(localFile, { start, end });
         const head = {
           'Content-Range': `bytes ${start}-${end}/${fileSize}`,
           'Accept-Ranges': 'bytes',
@@ -406,7 +439,7 @@ router.get('/stream/:id', async (req, res) => {
           'Accept-Ranges': 'bytes',
         };
         res.writeHead(200, head);
-        return fs.createReadStream(possibleLocalFile).pipe(res);
+        return fs.createReadStream(localFile).pipe(res);
       }
     }
 
@@ -443,8 +476,7 @@ router.get('/download/:id', async (req, res) => {
     const recording = await Recording.findById(req.params.id);
     if (!recording) return res.status(404).send('Recording not found');
 
-    const possibleLocalFile = recording.fileName ? path.join(uploadsDir, recording.fileName) : null;
-    const hasLocalFile = possibleLocalFile && fs.existsSync(possibleLocalFile);
+    const localFile = getLocalVideoFilePath(recording);
 
     if (recording.driveFileId) {
       try {
@@ -455,8 +487,8 @@ router.get('/download/:id', async (req, res) => {
       }
     }
 
-    if (hasLocalFile) {
-      return res.download(possibleLocalFile, recording.fileName || 'video.mp4');
+    if (localFile) {
+      return res.download(localFile, recording.fileName || 'video.mp4');
     }
 
     if (recording.driveDownloadLink) {
@@ -484,11 +516,9 @@ router.delete('/all', async (req, res) => {
             console.error('Failed to delete Google Drive file:', rec.driveFileId, e.message);
           }
         }
-        if (rec.localFilePath) {
-          const filePath = path.join(uploadsDir, rec.localFilePath);
-          if (fs.existsSync(filePath)) {
-            try { fs.unlinkSync(filePath); } catch (e) {}
-          }
+        const localFile = getLocalVideoFilePath(rec);
+        if (localFile && fs.existsSync(localFile)) {
+          try { fs.unlinkSync(localFile); } catch (e) {}
         }
       })
     );
@@ -526,11 +556,9 @@ router.post('/batch-delete', async (req, res) => {
             console.error('Failed to delete Google Drive file:', rec.driveFileId, e.message);
           }
         }
-        if (rec.localFilePath) {
-          const filePath = path.join(uploadsDir, rec.localFilePath);
-          if (fs.existsSync(filePath)) {
-            try { fs.unlinkSync(filePath); } catch (e) {}
-          }
+        const localFile = getLocalVideoFilePath(rec);
+        if (localFile && fs.existsSync(localFile)) {
+          try { fs.unlinkSync(localFile); } catch (e) {}
         }
       })
     );
@@ -571,11 +599,11 @@ router.delete('/:id', async (req, res) => {
     }
 
     // Delete local file if any leftover exists
-    if (recording.localFilePath) {
-      const filePath = path.join(uploadsDir, recording.localFilePath);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
+    const localFile = getLocalVideoFilePath(recording);
+    if (localFile && fs.existsSync(localFile)) {
+      try {
+        fs.unlinkSync(localFile);
+      } catch (e) {}
     }
 
     if (recording.deviceId) {

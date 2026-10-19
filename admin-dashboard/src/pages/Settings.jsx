@@ -139,25 +139,45 @@ export default function Settings() {
 
       {/* Google Drive Setup Guide Card */}
       <Card sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', gap: 2, mb: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <CloudUpload size={22} color="#00e5ff" />
             <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#fff' }}>
-              Google Drive Automated Linking (3-Step Setup)
+              Google Drive Cloud Storage
             </Typography>
           </Box>
-          <Chip
-            size="small"
-            label="One-Time Setup"
-            sx={{
-              background: 'rgba(0,230,118,0.12)', border: '1px solid rgba(0,230,118,0.3)',
-              color: '#00e676', fontWeight: 700,
-            }}
-          />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Button
+              variant="contained"
+              size="small"
+              component="a"
+              href={`${API_BASE_URL}/api/admin/auth/google`}
+              target="_blank"
+              rel="noreferrer"
+              startIcon={<CloudUpload size={14} />}
+              sx={{
+                background: "linear-gradient(135deg, #0284c7 0%, #00e5ff 100%)",
+                color: "#000",
+                fontWeight: 700,
+                fontSize: '0.75rem',
+                textTransform: 'none',
+              }}
+            >
+              Connect Google Drive (1-Click OAuth)
+            </Button>
+            <Chip
+              size="small"
+              label="Recommended"
+              sx={{
+                background: 'rgba(0,230,118,0.12)', border: '1px solid rgba(0,230,118,0.3)',
+                color: '#00e676', fontWeight: 700,
+              }}
+            />
+          </Box>
         </Box>
 
         <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 3 }}>
-          Allows all client phones to upload surveillance recordings directly into your Google Drive without prompting users to sign in.
+          Allows all client phones to upload surveillance recordings directly into your Google Drive without prompting users to sign in. Click the 1-Click OAuth button above to link your Google account (omor.faruk.furkan.3@gmail.com).
         </Typography>
 
         <Grid container spacing={2}>

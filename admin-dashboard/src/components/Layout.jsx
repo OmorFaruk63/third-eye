@@ -48,6 +48,12 @@ export default function Layout() {
     activeGeofenceAlert, setActiveGeofenceAlert,
   } = useDashboard();
 
+  const [videoLoadError, setVideoLoadError] = useState(false);
+
+  useEffect(() => {
+    setVideoLoadError(false);
+  }, [selectedVideo]);
+
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date().toLocaleTimeString()), 1000);
     return () => clearInterval(timer);
@@ -601,6 +607,50 @@ export default function Layout() {
                 />
               )}
             </Box>
+          ) : videoLoadError ? (
+            <Box sx={{ p: 4, textAlign: 'center', bgcolor: '#070d19' }}>
+              <Box sx={{
+                width: 56, height: 56, borderRadius: '50%',
+                bgcolor: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 2,
+              }}>
+                <AlertTriangle size={26} color="#ef4444" />
+              </Box>
+              <Typography sx={{ fontSize: 15, fontWeight: 700, color: '#fff', mb: 1 }}>
+                Video Playback Unavailable
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#94a3b8', maxWidth: 460, mx: 'auto', mb: 2.5, lineHeight: 1.5 }}>
+                {selectedVideo.driveFileId
+                  ? 'Unable to stream directly from Google Drive. Please check your Google Drive permissions or try downloading the file.'
+                  : 'The video was stored on temporary server storage. If the backend server restarted or ephemeral disk was cleared, this local file is no longer available. Reconnect Google Drive to guarantee permanent storage.'}
+              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1.5 }}>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setVideoLoadError(false)}
+                  sx={{ color: '#00e5ff', borderColor: 'rgba(0,229,255,0.3)' }}
+                >
+                  Retry
+                </Button>
+                <Button
+                  variant="contained"
+                  size="small"
+                  component="a"
+                  href={`${API_BASE_URL}/api/admin/auth/google`}
+                  target="_blank"
+                  rel="noreferrer"
+                  sx={{
+                    background: "linear-gradient(135deg, #0284c7 0%, #00e5ff 100%)",
+                    color: "#000",
+                    fontWeight: 700,
+                  }}
+                >
+                  Connect Google Drive
+                </Button>
+              </Box>
+            </Box>
           ) : (
             <Box sx={{ bgcolor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Box
@@ -608,6 +658,7 @@ export default function Layout() {
                 controls
                 autoPlay
                 src={`${API_BASE_URL}/api/videos/stream/${selectedVideo._id}`}
+                onError={() => setVideoLoadError(true)}
                 sx={{ width: '100%', maxHeight: '60vh', outline: 'none' }}
               />
             </Box>
@@ -615,7 +666,13 @@ export default function Layout() {
 
           <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
             <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: '#64748b' }}>
-              {selectedVideo.status === 'pending' ? 'Stored locally on phone' : selectedVideo.status === 'approved' ? 'Approved for WiFi upload' : 'Direct Stream from Cloud Storage'}
+              {selectedVideo.status === 'pending'
+                ? 'Stored locally on phone'
+                : selectedVideo.status === 'approved'
+                ? 'Approved for WiFi upload'
+                : selectedVideo.driveFileId
+                ? 'Direct Stream from Google Drive'
+                : 'Saved Locally on Server'}
             </Typography>
             <Stack direction="row" spacing={1}>
               {selectedVideo.driveViewLink && (
