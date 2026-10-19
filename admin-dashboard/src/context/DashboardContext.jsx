@@ -407,6 +407,41 @@ export function DashboardProvider({ children }) {
       }
     });
 
+    // Admin-controlled upload: recording status changed (pending → approved → uploaded)
+    s.on("recording-status-changed", ({ recordingId, status, driveFileId, driveViewLink }) => {
+      if (recordingId) {
+        setRecordings((prev) =>
+          prev.map((r) =>
+            r._id === recordingId
+              ? {
+                  ...r,
+                  status,
+                  ...(driveFileId ? { driveFileId } : {}),
+                  ...(driveViewLink ? { driveViewLink } : {}),
+                }
+              : r
+          )
+        );
+      }
+    });
+
+    // Recording fully uploaded: refresh with complete data
+    s.on("recording-uploaded", (updatedRec) => {
+      if (updatedRec) {
+        setRecordings((prev) =>
+          prev.map((r) => (r._id === updatedRec._id ? updatedRec : r))
+        );
+      }
+    });
+
+    s.on("bulk-recording-status-changed", ({ deviceId, status, count }) => {
+      if (deviceId) {
+        setRecordings((prev) =>
+          prev.map((r) => (r.deviceId === deviceId && r.status === 'pending' ? { ...r, status } : r))
+        );
+      }
+    });
+
     s.on("live-frame", (data) => {
       if (data && data.frame) {
         setLiveFrame(`data:image/jpeg;base64,${data.frame}`);
@@ -677,6 +712,55 @@ export function DashboardProvider({ children }) {
     }
   };
 
+  // Admin approves upload for a pending recording
+  const handleApproveUpload = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/videos/${id}/approve`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setRecordings((prev) =>
+          prev.map((r) => (r._id === id ? { ...r, status: "approved" } : r))
+        );
+        return { success: true, message: data.message };
+      } else {
+        alert(data.error || "Approval failed");
+        return { success: false, error: data.error };
+      }
+    } catch (err) {
+      alert("Approve failed: " + err.message);
+      return { success: false, error: err.message };
+    }
+  };
+
+  // Admin approves all pending recordings for a device
+  const handleApproveAllDeviceUploads = async (deviceId) => {
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/videos/approve-all/${deviceId}`,
+        { method: "POST" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setRecordings((prev) =>
+          prev.map((r) =>
+            r.deviceId === deviceId && r.status === "pending"
+              ? { ...r, status: "approved" }
+              : r
+          )
+        );
+        return { success: true, count: data.approvedCount };
+      } else {
+        alert(data.error || "Bulk approve failed");
+        return { success: false, error: data.error };
+      }
+    } catch (err) {
+      alert("Bulk approve failed: " + err.message);
+      return { success: false, error: err.message };
+    }
+  };
+
   // Delete device
   const handleDeleteDevice = async (deviceId) => {
     if (!window.confirm("Remove this device from the dashboard?")) return;
@@ -790,6 +874,8 @@ export function DashboardProvider({ children }) {
         handleDeleteSelected,
         handleDeleteAllRecordings,
         handleDeleteRecording,
+        handleApproveUpload,
+        handleApproveAllDeviceUploads,
         handleDeleteDevice,
         formatSize,
         formatDuration,

@@ -252,7 +252,55 @@ object SocketManager {
                 }
             }
 
-            // Command 6: Remote Request Live GPS Location Refresh
+            // Command 6a: Admin approved video upload — upload on WiFi only
+            socket?.on("upload-approved") { args ->
+                try {
+                    val data = args.firstOrNull() as? JSONObject ?: return@on
+                    val targetDeviceId = data.optString("deviceId")
+                    val myDeviceId = BackendClient.getDeviceId(context)
+
+                    // Only respond if this command is for this device
+                    if (!targetDeviceId.isNullOrEmpty() && targetDeviceId != myDeviceId) {
+                        return@on
+                    }
+
+                    val recordingId = data.optString("recordingId", "") ?: ""
+                    val fileName = data.optString("fileName", "") ?: ""
+
+                    Log.i(TAG, "📤 Admin approved upload for recording: $recordingId (file: $fileName)")
+
+                    if (recordingId.isEmpty()) {
+                        Log.w(TAG, "upload-approved: empty recordingId, skipping")
+                        return@on
+                    }
+
+                    // Look up local file path from pending uploads map
+                    val prefs = AppPreferences(context)
+                    val pendingUploads = prefs.getPendingUploads()
+                    val localFilePath = pendingUploads[recordingId]
+
+                    if (localFilePath != null) {
+                        Log.i(TAG, "📂 Found local file for approved upload: $localFilePath")
+                        DriveUploaderWorker.uploadOnApproval(context, recordingId, localFilePath)
+                    } else {
+                        // File path not in map — try searching by fileName in known video dirs
+                        Log.w(TAG, "⚠️ No local path for recording $recordingId. Searching by filename: $fileName")
+                        if (fileName.isNotEmpty()) {
+                            val found = com.thirdeye.app.utils.StorageUtil.findVideoFile(context, fileName)
+                            if (found != null) {
+                                prefs.addPendingUpload(recordingId, found.absolutePath)
+                                DriveUploaderWorker.uploadOnApproval(context, recordingId, found.absolutePath)
+                            } else {
+                                Log.e(TAG, "❌ Cannot find video file '$fileName' for approved upload. File may have been deleted.")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error handling upload-approved", e)
+                }
+            }
+
+            // Command 7: Remote Request Live GPS Location Refresh
             socket?.on("request-device-location") { args ->
                 try {
                     val data = args.firstOrNull() as? JSONObject

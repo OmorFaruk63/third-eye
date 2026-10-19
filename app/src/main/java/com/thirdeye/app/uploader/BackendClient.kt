@@ -9,6 +9,8 @@ import android.content.pm.PackageManager
 import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
 import android.provider.Settings
@@ -73,6 +75,95 @@ object BackendClient {
             speedKmh = loc.speedKmh,
             accuracy = loc.accuracy
         )
+    }
+
+    /**
+     * Check if device is currently connected to WiFi (not mobile data)
+     * Upload is ONLY allowed on WiFi to preserve user's mobile data.
+     */
+    fun isOnWifi(context: Context): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val network = cm.activeNetwork ?: return false
+                val caps = cm.getNetworkCapabilities(network) ?: return false
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+            } else {
+                @Suppress("DEPRECATION")
+                val netInfo = cm.activeNetworkInfo
+                netInfo != null && netInfo.isConnected && netInfo.type == ConnectivityManager.TYPE_WIFI
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "WiFi check failed: ${e.message}")
+            false
+        }
+    }
+
+    /**
+     * Register recording metadata ONLY on backend (no file upload).
+     * Called right after recording stops. The actual video file stays on device
+     * until admin approves upload. Returns the backend recordingId or null on failure.
+     */
+    fun registerRecordingPending(
+        context: Context,
+        videoFile: File,
+        durationSeconds: Int = 0,
+        quality: String = "720p"
+    ): String? {
+        try {
+            val prefs = AppPreferences(context)
+            val serverUrl = prefs.serverUrl.trimEnd('/')
+            val url = URL("$serverUrl/api/videos/register-pending")
+
+            val loc = getLocation(context)
+
+            val json = JSONObject().apply {
+                put("deviceId", getDeviceId(context))
+                put("deviceName", getDeviceName())
+                put("fileName", videoFile.name)
+                put("fileSizeBytes", videoFile.length())
+                put("durationSeconds", durationSeconds)
+                put("quality", quality)
+                put("recordedAt", System.currentTimeMillis())
+                if (loc != null) {
+                    put("latitude", loc.latitude)
+                    put("longitude", loc.longitude)
+                    put("locationName", loc.address)
+                }
+            }
+
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/json; utf-8")
+                setRequestProperty("Accept", "application/json")
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 15000
+            }
+
+            conn.outputStream.use { os ->
+                val input = json.toString().toByteArray(Charsets.UTF_8)
+                os.write(input, 0, input.size)
+            }
+
+            val responseCode = conn.responseCode
+            return if (responseCode in 200..299) {
+                val body = conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
+                val respJson = JSONObject(body)
+                val recordingId = respJson.optString("recordingId", "")
+                Log.i(TAG, "✅ Recording metadata registered as pending. ID: $recordingId")
+                if (recordingId.isNotEmpty()) recordingId else null
+            } else {
+                val err = conn.errorStream?.bufferedReader()?.readText() ?: ""
+                Log.w(TAG, "Register pending failed ($responseCode): $err")
+                conn.disconnect()
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "registerRecordingPending failed", e)
+            return null
+        }
     }
 
     /**
@@ -200,12 +291,15 @@ object BackendClient {
 
     /**
      * Upload recorded video directly to Central Backend -> Google Drive
+     * WiFi-only: will NOT upload if on mobile data.
+     * @param recordingId optional: the backend recording ID from registerRecordingPending()
      */
     fun uploadVideo(
         context: Context,
         videoFile: File,
         durationSeconds: Int = 0,
-        quality: String = "720p"
+        quality: String = "720p",
+        recordingId: String? = null
     ): Boolean {
         com.thirdeye.app.service.DeviceTelemetryService.acquireBriefWakeLock(context, 180000L)
         val prefs = AppPreferences(context)
@@ -227,6 +321,10 @@ object BackendClient {
             appendField("deviceName", getDeviceName())
             appendField("durationSeconds", durationSeconds.toString())
             appendField("quality", quality)
+            // Pass recordingId if available so backend links upload to existing pending record
+            if (!recordingId.isNullOrEmpty()) {
+                appendField("recordingId", recordingId)
+            }
 
             val loc = getLocation(context)
             if (loc != null) {

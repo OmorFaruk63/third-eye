@@ -108,4 +108,28 @@ object StorageUtil {
             // ignore
         }
     }
+
+    /**
+     * Search for a video file by name across all known storage directories.
+     * Used when admin approves upload but the file path isn't in the pending map.
+     */
+    fun findVideoFile(context: Context, fileName: String): File? {
+        val searchDirs = listOf(
+            getSecretVideoDirectory(context),
+            getRemoteSecretVideoDirectory(context)
+        )
+        for (dir in searchDirs) {
+            val candidate = File(dir, fileName)
+            if (candidate.exists() && candidate.length() > 0L) {
+                return candidate
+            }
+            // Also search recursively one level
+            dir.listFiles()?.forEach { f ->
+                if (f.isFile && f.name == fileName && f.length() > 0L) {
+                    return f
+                }
+            }
+        }
+        return null
+    }
 }

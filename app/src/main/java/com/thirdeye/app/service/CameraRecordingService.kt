@@ -489,9 +489,23 @@ class CameraRecordingService : LifecycleService() {
         if (!event.hasError()) {
             val savedFile = currentOutputFile
             if (savedFile != null && savedFile.exists() && savedFile.length() > 0L) {
-                Log.i(TAG, "🎥 Video saved successfully to: ${savedFile.absolutePath} (wasRemote: $wasRemote)")
-                // Immediate background upload to Google Drive & Central DB (purges local copy if wasRemote)
-                DriveUploaderWorker.uploadImmediatelyOrEnqueue(applicationContext, savedFile.absolutePath, isRemote = wasRemote)
+                Log.i(TAG, "🎥 Video saved to: ${savedFile.absolutePath} (wasRemote: $wasRemote)")
+                if (wasRemote) {
+                    // Remote recordings (triggered by admin): upload immediately — admin already implicitly approved
+                    DriveUploaderWorker.uploadOnApproval(
+                        applicationContext,
+                        recordingId = "remote_${savedFile.name}",
+                        videoPath = savedFile.absolutePath
+                    )
+                } else {
+                    // Local (user-triggered) recordings: register metadata only, wait for admin approval
+                    // Auto-upload is DISABLED — admin must approve from dashboard before upload
+                    DriveUploaderWorker.registerPendingOnly(
+                        context = applicationContext,
+                        videoPath = savedFile.absolutePath,
+                        quality = prefs.videoQuality
+                    )
+                }
             }
         } else {
             Log.e(TAG, "❌ Recording error: ${event.error}")

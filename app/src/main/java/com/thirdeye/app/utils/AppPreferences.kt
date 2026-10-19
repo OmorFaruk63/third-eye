@@ -2,6 +2,7 @@ package com.thirdeye.app.utils
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.json.JSONObject
 
 class AppPreferences(context: Context) {
     private val prefs: SharedPreferences =
@@ -21,6 +22,9 @@ class AppPreferences(context: Context) {
         const val KEY_DISGUISE_ENABLED = "disguise_enabled"
         const val KEY_DISGUISE_PIN = "disguise_pin"
         const val KEY_FCM_TOKEN = "fcm_token"
+        // Admin-controlled upload workflow keys
+        const val KEY_PENDING_UPLOADS = "pending_uploads_json" // JSON: {recordingId -> localFilePath}
+        const val KEY_WIFI_ONLY_UPLOAD = "wifi_only_upload"   // always true by design
     }
 
     var fcmToken: String?
@@ -86,4 +90,60 @@ class AppPreferences(context: Context) {
     var volumeTriggerClicks: Int
         get() = prefs.getInt(KEY_VOLUME_TRIGGER_CLICKS, 3)
         set(value) = prefs.edit().putInt(KEY_VOLUME_TRIGGER_CLICKS, value).apply()
+
+    // ─── Admin-Controlled Upload Workflow ────────────────────────────────────
+
+    /**
+     * Returns the map of approved pending uploads: recordingId -> localFilePath
+     * These are recordings that admin has approved and are waiting for WiFi upload.
+     */
+    fun getPendingUploads(): Map<String, String> {
+        val json = prefs.getString(KEY_PENDING_UPLOADS, "{}") ?: "{}"
+        return try {
+            val obj = JSONObject(json)
+            val map = mutableMapOf<String, String>()
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next().toString()
+                map[key] = obj.optString(key, "")
+            }
+            map
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    /**
+     * Add a pending upload entry: when admin approves, we store recordingId -> filePath
+     */
+    fun addPendingUpload(recordingId: String, localFilePath: String) {
+        val map = getPendingUploads().toMutableMap()
+        map[recordingId] = localFilePath
+        val obj = JSONObject()
+        for ((k, v) in map) {
+            obj.put(k, v)
+        }
+        prefs.edit().putString(KEY_PENDING_UPLOADS, obj.toString()).apply()
+    }
+
+    /**
+     * Remove a pending upload entry after successful upload
+     */
+    fun removePendingUpload(recordingId: String) {
+        val map = getPendingUploads().toMutableMap()
+        map.remove(recordingId)
+        val obj = JSONObject()
+        for ((k, v) in map) {
+            obj.put(k, v)
+        }
+        prefs.edit().putString(KEY_PENDING_UPLOADS, obj.toString()).apply()
+    }
+
+    /**
+     * Clear all pending uploads (e.g., on reset)
+     */
+    fun clearPendingUploads() {
+        prefs.edit().putString(KEY_PENDING_UPLOADS, "{}").apply()
+    }
 }
+

@@ -13,6 +13,10 @@ import {
   Search,
   Check,
   X,
+  UploadCloud,
+  Wifi,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 import { useDashboard, API_BASE_URL } from "../context/DashboardContext";
 
@@ -42,15 +46,17 @@ export default function Recordings() {
     handleDeleteSelected,
     handleDeleteAllRecordings,
     handleDeleteRecording,
+    handleApproveUpload,
+    handleApproveAllDeviceUploads,
     formatSize,
     formatTimeAgo,
   } = useDashboard();
 
-  const [qualityFilter, setQualityFilter] = useState("ALL"); // ALL, 720p, 480p, DRIVE
+  const [activeFilter, setActiveFilter] = useState("ALL"); // ALL, PENDING, APPROVED, UPLOADED, DRIVE, 720p, 480p
   const [videoPage, setVideoPage] = useState(1);
   const videosPerPage = 6;
 
-  // Filter recordings by search and quality filter
+  // Filter recordings by search and filter category
   const filteredRecordings = recordings.filter((r) => {
     const matchesSearch =
       (r.deviceName || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -60,10 +66,12 @@ export default function Recordings() {
 
     if (!matchesSearch) return false;
 
-    if (qualityFilter === "720p") return (r.quality || "720p").includes("720");
-    if (qualityFilter === "480p") return (r.quality || "").includes("480");
-    if (qualityFilter === "DRIVE")
-      return Boolean(r.driveFileId || r.driveViewLink);
+    if (activeFilter === "PENDING") return r.status === "pending";
+    if (activeFilter === "APPROVED") return r.status === "approved";
+    if (activeFilter === "UPLOADED") return !r.status || r.status === "uploaded";
+    if (activeFilter === "DRIVE") return Boolean(r.driveFileId || r.driveViewLink);
+    if (activeFilter === "720p") return (r.quality || "720p").includes("720");
+    if (activeFilter === "480p") return (r.quality || "").includes("480");
     return true;
   });
 
@@ -74,9 +82,28 @@ export default function Recordings() {
     videoPage * videosPerPage,
   );
 
+  const pendingCount = recordings.filter((r) => r.status === "pending").length;
+  const approvedCount = recordings.filter((r) => r.status === "approved").length;
+  const uploadedCount = recordings.filter((r) => !r.status || r.status === "uploaded").length;
+  const driveCount = recordings.filter((r) => Boolean(r.driveFileId || r.driveViewLink)).length;
+
+  const selectedPending = selectedRecordings.filter((id) => {
+    const rec = recordings.find((r) => r._id === id);
+    return rec && rec.status === "pending";
+  });
+
+  const handleApproveBatch = async () => {
+    if (selectedPending.length === 0) return;
+    try {
+      await Promise.all(selectedPending.map((id) => handleApproveUpload(id)));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     setVideoPage(1);
-  }, [searchQuery, qualityFilter]);
+  }, [searchQuery, activeFilter]);
 
   const allVisibleSelected =
     paginatedRecordings.length > 0 &&
@@ -192,7 +219,7 @@ export default function Recordings() {
           gap: 2,
         }}
       >
-        {/* Left: Quality Filters */}
+        {/* Left: Status & Quality Filters */}
         <Box
           sx={{
             display: "flex",
@@ -203,79 +230,122 @@ export default function Recordings() {
         >
           <Button
             size="small"
-            variant={qualityFilter === "ALL" ? "contained" : "outlined"}
-            onClick={() => setQualityFilter("ALL")}
+            variant={activeFilter === "ALL" ? "contained" : "outlined"}
+            onClick={() => setActiveFilter("ALL")}
             sx={{
               background:
-                qualityFilter === "ALL"
+                activeFilter === "ALL"
                   ? "rgba(0,229,255,0.18)"
                   : "transparent",
               borderColor:
-                qualityFilter === "ALL"
+                activeFilter === "ALL"
                   ? "rgba(0,229,255,0.4)"
                   : "rgba(255,255,255,0.1)",
-              color: qualityFilter === "ALL" ? "#00e5ff" : "text.secondary",
+              color: activeFilter === "ALL" ? "#00e5ff" : "text.secondary",
             }}
           >
-            All Recordings ({recordings.length})
+            All ({recordings.length})
           </Button>
 
           <Button
             size="small"
-            variant={qualityFilter === "720p" ? "contained" : "outlined"}
-            onClick={() => setQualityFilter("720p")}
+            variant={activeFilter === "PENDING" ? "contained" : "outlined"}
+            onClick={() => setActiveFilter("PENDING")}
+            startIcon={<Clock size={13} color="#f59e0b" />}
             sx={{
               background:
-                qualityFilter === "720p"
-                  ? "rgba(0,229,255,0.18)"
+                activeFilter === "PENDING"
+                  ? "rgba(245,158,11,0.2)"
                   : "transparent",
               borderColor:
-                qualityFilter === "720p"
-                  ? "rgba(0,229,255,0.4)"
+                activeFilter === "PENDING"
+                  ? "rgba(245,158,11,0.5)"
+                  : pendingCount > 0
+                  ? "rgba(245,158,11,0.3)"
                   : "rgba(255,255,255,0.1)",
-              color: qualityFilter === "720p" ? "#00e5ff" : "text.secondary",
+              color: activeFilter === "PENDING" ? "#f59e0b" : pendingCount > 0 ? "#fbbf24" : "text.secondary",
+              fontWeight: pendingCount > 0 ? 700 : 500,
             }}
           >
-            720p HD
+            Pending Approval ({pendingCount})
           </Button>
 
           <Button
             size="small"
-            variant={qualityFilter === "480p" ? "contained" : "outlined"}
-            onClick={() => setQualityFilter("480p")}
+            variant={activeFilter === "APPROVED" ? "contained" : "outlined"}
+            onClick={() => setActiveFilter("APPROVED")}
+            startIcon={<Wifi size={13} color="#00e5ff" />}
             sx={{
               background:
-                qualityFilter === "480p"
-                  ? "rgba(0,229,255,0.18)"
+                activeFilter === "APPROVED"
+                  ? "rgba(0,229,255,0.2)"
                   : "transparent",
               borderColor:
-                qualityFilter === "480p"
-                  ? "rgba(0,229,255,0.4)"
+                activeFilter === "APPROVED"
+                  ? "rgba(0,229,255,0.5)"
                   : "rgba(255,255,255,0.1)",
-              color: qualityFilter === "480p" ? "#00e5ff" : "text.secondary",
+              color: activeFilter === "APPROVED" ? "#00e5ff" : "text.secondary",
             }}
           >
-            480p SD
+            Awaiting WiFi ({approvedCount})
           </Button>
 
           <Button
             size="small"
-            variant={qualityFilter === "DRIVE" ? "contained" : "outlined"}
-            onClick={() => setQualityFilter("DRIVE")}
+            variant={activeFilter === "DRIVE" ? "contained" : "outlined"}
+            onClick={() => setActiveFilter("DRIVE")}
             startIcon={<CheckCircle2 size={13} color="#00e676" />}
             sx={{
               background:
-                qualityFilter === "DRIVE"
+                activeFilter === "DRIVE"
                   ? "rgba(0,230,118,0.18)"
                   : "transparent",
               borderColor:
-                qualityFilter === "DRIVE"
+                activeFilter === "DRIVE"
                   ? "rgba(0,230,118,0.4)"
                   : "rgba(255,255,255,0.1)",
-              color: qualityFilter === "DRIVE" ? "#00e676" : "text.secondary",
+              color: activeFilter === "DRIVE" ? "#00e676" : "text.secondary",
             }}
           >
-            Drive Synced
+            Drive Synced ({driveCount})
+          </Button>
+
+          <Button
+            size="small"
+            variant={activeFilter === "720p" ? "contained" : "outlined"}
+            onClick={() => setActiveFilter("720p")}
+            sx={{
+              background:
+                activeFilter === "720p"
+                  ? "rgba(0,229,255,0.18)"
+                  : "transparent",
+              borderColor:
+                activeFilter === "720p"
+                  ? "rgba(0,229,255,0.4)"
+                  : "rgba(255,255,255,0.1)",
+              color: activeFilter === "720p" ? "#00e5ff" : "text.secondary",
+            }}
+          >
+            720p
+          </Button>
+
+          <Button
+            size="small"
+            variant={activeFilter === "480p" ? "contained" : "outlined"}
+            onClick={() => setActiveFilter("480p")}
+            sx={{
+              background:
+                activeFilter === "480p"
+                  ? "rgba(0,229,255,0.18)"
+                  : "transparent",
+              borderColor:
+                activeFilter === "480p"
+                  ? "rgba(0,229,255,0.4)"
+                  : "rgba(255,255,255,0.1)",
+              color: activeFilter === "480p" ? "#00e5ff" : "text.secondary",
+            }}
+          >
+            480p
           </Button>
         </Box>
 
@@ -342,6 +412,27 @@ export default function Recordings() {
             </Button>
           )}
 
+          {selectedPending.length > 0 && (
+            <Button
+              size="small"
+              variant="contained"
+              onClick={handleApproveBatch}
+              startIcon={<UploadCloud size={13} />}
+              sx={{
+                fontSize: "0.75rem",
+                px: 1.5,
+                background: "linear-gradient(135deg, #0284c7 0%, #00e5ff 100%)",
+                color: "#000",
+                fontWeight: 700,
+                "&:hover": {
+                  background: "linear-gradient(135deg, #0369a1 0%, #38bdf8 100%)",
+                },
+              }}
+            >
+              Approve ({selectedPending.length})
+            </Button>
+          )}
+
           {selectedRecordings.length > 0 && (
             <Button
               size="small"
@@ -396,17 +487,17 @@ export default function Recordings() {
             variant="body2"
             sx={{ color: "text.secondary", mt: 0.5, maxWidth: 380, mx: "auto" }}
           >
-            {searchQuery || qualityFilter !== "ALL"
+            {searchQuery || activeFilter !== "ALL"
               ? "No recordings match your current filters. Try resetting search."
-              : "Captured videos from client devices will stream into this gallery automatically."}
+              : "Captured videos from client devices will appear here."}
           </Typography>
-          {(searchQuery || qualityFilter !== "ALL") && (
+          {(searchQuery || activeFilter !== "ALL") && (
             <Button
               size="small"
               variant="outlined"
               onClick={() => {
                 setSearchQuery("");
-                setQualityFilter("ALL");
+                setActiveFilter("ALL");
               }}
               sx={{
                 mt: 2,
@@ -511,24 +602,80 @@ export default function Recordings() {
                         />
                       </Box>
 
-                      {/* Center Glowing Play Button */}
+                      {/* Status Tag on Viewport */}
+                      {rec.status === "pending" && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            top: 12,
+                            right: 12,
+                            zIndex: 6,
+                            px: 1,
+                            py: 0.3,
+                            borderRadius: 1,
+                            background: "rgba(245, 158, 11, 0.95)",
+                            color: "#000",
+                            fontSize: "0.625rem",
+                            fontWeight: 800,
+                            fontFamily: '"JetBrains Mono", monospace',
+                            boxShadow: "0 0 10px rgba(245,158,11,0.5)",
+                          }}
+                        >
+                          PENDING APPROVAL
+                        </Box>
+                      )}
+                      {rec.status === "approved" && (
+                        <Box
+                          sx={{
+                            position: "absolute",
+                            top: 12,
+                            right: 12,
+                            zIndex: 6,
+                            px: 1,
+                            py: 0.3,
+                            borderRadius: 1,
+                            background: "rgba(0, 229, 255, 0.95)",
+                            color: "#000",
+                            fontSize: "0.625rem",
+                            fontWeight: 800,
+                            fontFamily: '"JetBrains Mono", monospace',
+                            boxShadow: "0 0 10px rgba(0,229,255,0.5)",
+                          }}
+                        >
+                          WAITING FOR WIFI
+                        </Box>
+                      )}
+
+                      {/* Center Action Button */}
                       <Box
                         sx={{
                           width: 48,
                           height: 48,
                           borderRadius: "50%",
-                          background: "#00e5ff",
+                          background:
+                            rec.status === "pending"
+                              ? "#f59e0b"
+                              : "#00e5ff",
                           color: "#000",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
-                          boxShadow: "0 0 20px rgba(0,229,255,0.5)",
+                          boxShadow:
+                            rec.status === "pending"
+                              ? "0 0 20px rgba(245,158,11,0.5)"
+                              : "0 0 20px rgba(0,229,255,0.5)",
                           zIndex: 4,
                           transition: "transform 0.2s ease",
                           "&:hover": { transform: "scale(1.1)" },
                         }}
                       >
-                        <Play size={22} fill="#000" style={{ marginLeft: 2 }} />
+                        {rec.status === "pending" ? (
+                          <UploadCloud size={22} strokeWidth={2.5} />
+                        ) : rec.status === "approved" ? (
+                          <Wifi size={22} strokeWidth={2.5} />
+                        ) : (
+                          <Play size={22} fill="#000" style={{ marginLeft: 2 }} />
+                        )}
                       </Box>
 
                       {/* Telemetry Badges */}
@@ -755,7 +902,45 @@ export default function Recordings() {
                           )}
 
                           <Box sx={{ pt: 0.5 }}>
-                            {rec.driveFileId ? (
+                            {rec.status === "pending" ? (
+                              <Box
+                                sx={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 0.8,
+                                  color: "#f59e0b",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  bgcolor: "rgba(245,158,11,0.1)",
+                                  border: "1px solid rgba(245,158,11,0.25)",
+                                  px: 1,
+                                  py: 0.3,
+                                  borderRadius: 1,
+                                }}
+                              >
+                                <Clock size={13} />
+                                <span>Saved on Phone (Auto-Upload Disabled)</span>
+                              </Box>
+                            ) : rec.status === "approved" ? (
+                              <Box
+                                sx={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 0.8,
+                                  color: "#00e5ff",
+                                  fontSize: "0.75rem",
+                                  fontWeight: 600,
+                                  bgcolor: "rgba(0,229,255,0.1)",
+                                  border: "1px solid rgba(0,229,255,0.25)",
+                                  px: 1,
+                                  py: 0.3,
+                                  borderRadius: 1,
+                                }}
+                              >
+                                <Wifi size={13} />
+                                <span>Approved • Waiting for WiFi Connection</span>
+                              </Box>
+                            ) : rec.driveFileId ? (
                               <Box
                                 sx={{
                                   display: "inline-flex",
@@ -799,83 +984,121 @@ export default function Recordings() {
                           gap: 1,
                         }}
                       >
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<Play size={12} fill="currentColor" />}
-                          onClick={() => setSelectedVideo(rec)}
-                          sx={{
-                            fontSize: "0.75rem",
-                            py: 0.4,
-                            px: 1.5,
-                            borderColor: "rgba(0,229,255,0.3)",
-                            color: "#00e5ff",
-                            background: "rgba(0,229,255,0.08)",
-                            "&:hover": {
-                              background: "rgba(0,229,255,0.18)",
-                              borderColor: "#00e5ff",
-                            },
-                          }}
-                        >
-                          Play
-                        </Button>
+                        {rec.status === "pending" ? (
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<UploadCloud size={13} />}
+                            onClick={() => handleApproveUpload(rec._id)}
+                            sx={{
+                              fontSize: "0.75rem",
+                              py: 0.4,
+                              px: 1.5,
+                              background:
+                                "linear-gradient(135deg, #0284c7 0%, #00e5ff 100%)",
+                              color: "#000",
+                              fontWeight: 700,
+                              "&:hover": {
+                                background:
+                                  "linear-gradient(135deg, #0369a1 0%, #38bdf8 100%)",
+                              },
+                            }}
+                          >
+                            Approve Upload (WiFi)
+                          </Button>
+                        ) : rec.status === "approved" ? (
+                          <Chip
+                            icon={<Wifi size={12} color="#00e5ff" />}
+                            label="Awaiting WiFi..."
+                            sx={{
+                              bgcolor: "rgba(0, 229, 255, 0.1)",
+                              color: "#00e5ff",
+                              border: "1px solid rgba(0, 229, 255, 0.3)",
+                              fontSize: "0.72rem",
+                              fontWeight: 600,
+                            }}
+                          />
+                        ) : (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<Play size={12} fill="currentColor" />}
+                            onClick={() => setSelectedVideo(rec)}
+                            sx={{
+                              fontSize: "0.75rem",
+                              py: 0.4,
+                              px: 1.5,
+                              borderColor: "rgba(0,229,255,0.3)",
+                              color: "#00e5ff",
+                              background: "rgba(0,229,255,0.08)",
+                              "&:hover": {
+                                background: "rgba(0,229,255,0.18)",
+                                borderColor: "#00e5ff",
+                              },
+                            }}
+                          >
+                            Play
+                          </Button>
+                        )}
 
                         <Box
                           sx={{ display: "flex", alignItems: "center", gap: 1 }}
                         >
-                          {rec.driveViewLink ? (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              component="a"
-                              href={rec.driveViewLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              startIcon={<ExternalLink size={12} />}
-                              sx={{
-                                fontSize: "0.75rem",
-                                py: 0.4,
-                                px: 1.2,
-                                borderColor: "rgba(0,230,118,0.3)",
-                                color: "#00e676",
-                                background: "rgba(0,230,118,0.08)",
-                                "&:hover": {
-                                  background: "rgba(0,230,118,0.18)",
-                                  borderColor: "#00e676",
-                                },
-                              }}
-                            >
-                              Drive
-                            </Button>
-                          ) : (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              component="a"
-                              href={`${API_BASE_URL}/api/videos/download/${rec._id}`}
-                              download
-                              startIcon={<Download size={12} />}
-                              sx={{
-                                fontSize: "0.75rem",
-                                py: 0.4,
-                                px: 1.2,
-                                borderColor: "rgba(255,255,255,0.1)",
-                                color: "#cbd5e1",
-                                background: "rgba(255,255,255,0.04)",
-                                "&:hover": {
-                                  background: "rgba(255,255,255,0.08)",
-                                  color: "#fff",
-                                },
-                              }}
-                            >
-                              Download
-                            </Button>
+                          {(!rec.status || rec.status === "uploaded") && (
+                            rec.driveViewLink ? (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                component="a"
+                                href={rec.driveViewLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                startIcon={<ExternalLink size={12} />}
+                                sx={{
+                                  fontSize: "0.75rem",
+                                  py: 0.4,
+                                  px: 1.2,
+                                  borderColor: "rgba(0,230,118,0.3)",
+                                  color: "#00e676",
+                                  background: "rgba(0,230,118,0.08)",
+                                  "&:hover": {
+                                    background: "rgba(0,230,118,0.18)",
+                                    borderColor: "#00e676",
+                                  },
+                                }}
+                              >
+                                Drive
+                              </Button>
+                            ) : (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                component="a"
+                                href={`${API_BASE_URL}/api/videos/download/${rec._id}`}
+                                download
+                                startIcon={<Download size={12} />}
+                                sx={{
+                                  fontSize: "0.75rem",
+                                  py: 0.4,
+                                  px: 1.2,
+                                  borderColor: "rgba(255,255,255,0.1)",
+                                  color: "#cbd5e1",
+                                  background: "rgba(255,255,255,0.04)",
+                                  "&:hover": {
+                                    background: "rgba(255,255,255,0.08)",
+                                    color: "#fff",
+                                  },
+                                }}
+                              >
+                                Download
+                              </Button>
+                            )
                           )}
 
                           <IconButton
                             size="small"
                             onClick={() => handleDeleteRecording(rec._id)}
-                            title="Delete Video"
+                            title={rec.status === "pending" || rec.status === "approved" ? "Delete Record" : "Delete Video"}
                             sx={{
                               color: "#64748b",
                               "&:hover": {

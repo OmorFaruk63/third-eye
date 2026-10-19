@@ -58,10 +58,26 @@ const RecordingSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  // Admin-Controlled Upload Workflow fields
+  status: {
+    type: String,
+    enum: ['pending', 'approved', 'uploaded'],
+    default: 'pending',
+    index: true,
+  },
+  uploadApprovedAt: {
+    type: Date,
+    default: null,
+  },
+  recordedAt: {
+    type: Date,
+    default: Date.now,
+  },
 }, { timestamps: true });
 
 RecordingSchema.index({ deviceId: 1, createdAt: -1 });
 RecordingSchema.index({ createdAt: -1 });
+RecordingSchema.index({ status: 1, deviceId: 1 });
 
 module.exports = mongoose.model('Recording', RecordingSchema);
 

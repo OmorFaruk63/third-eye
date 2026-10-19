@@ -4,7 +4,7 @@ import {
   Eye, Smartphone, Video, Settings, LayoutDashboard,
   RefreshCw, Download, Volume2, VolumeX, Info,
   ExternalLink, Clock, Radio, Shield, HardDrive,
-  Activity, Wifi, AlertTriangle,
+  Activity, Wifi, AlertTriangle, UploadCloud,
 } from 'lucide-react';
 import { useDashboard, API_BASE_URL } from '../context/DashboardContext';
 import CameraSelectModal from './CameraSelectModal';
@@ -44,7 +44,7 @@ export default function Layout() {
     isAudioMuted, liveOnlineCount, liveStreamError,
     fetchData, handleStartLiveStream, handleStopLiveStream, handleSwitchCamera,
     handleTakeSnapshot, toggleAudioMute, formatSize,
-    handleToggleRecordingFromLive,
+    handleToggleRecordingFromLive, handleApproveUpload,
     activeGeofenceAlert, setActiveGeofenceAlert,
   } = useDashboard();
 
@@ -554,18 +554,69 @@ export default function Layout() {
             </IconButton>
           </Box>
 
-          <Box sx={{ bgcolor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Box
-              component="video"
-              controls
-              autoPlay
-              src={`${API_BASE_URL}/api/videos/stream/${selectedVideo._id}`}
-              sx={{ width: '100%', maxHeight: '60vh', outline: 'none' }}
-            />
-          </Box>
+          {selectedVideo.status === 'pending' || selectedVideo.status === 'approved' ? (
+            <Box sx={{ p: 4, textAlign: 'center', bgcolor: '#070d19' }}>
+              <Box sx={{
+                width: 64, height: 64, borderRadius: '50%',
+                bgcolor: selectedVideo.status === 'pending' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(0, 229, 255, 0.12)',
+                border: selectedVideo.status === 'pending' ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(0, 229, 255, 0.3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 2,
+              }}>
+                {selectedVideo.status === 'pending' ? <Clock size={28} color="#f59e0b" /> : <Wifi size={28} color="#00e5ff" />}
+              </Box>
+              <Typography sx={{ fontSize: 16, fontWeight: 700, color: '#fff', mb: 1 }}>
+                {selectedVideo.status === 'pending' ? 'Video Pending Admin Approval' : 'Upload Approved • Waiting for Device WiFi'}
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#94a3b8', maxWidth: 480, mx: 'auto', mb: 3, lineHeight: 1.6 }}>
+                {selectedVideo.status === 'pending'
+                  ? 'Auto-upload is disabled to save mobile data. This recording is safely saved in device storage. Approve the upload so it will sync automatically when the device is connected to WiFi.'
+                  : 'Upload has been approved by admin. The mobile app will initiate the upload as soon as it is connected to a WiFi network.'}
+              </Typography>
+
+              {selectedVideo.status === 'pending' ? (
+                <Button
+                  variant="contained"
+                  startIcon={<UploadCloud size={16} />}
+                  onClick={async () => {
+                    const res = await handleApproveUpload(selectedVideo._id);
+                    if (res?.success) {
+                      setSelectedVideo(prev => prev ? { ...prev, status: 'approved' } : null);
+                    }
+                  }}
+                  sx={{
+                    background: "linear-gradient(135deg, #0284c7 0%, #00e5ff 100%)",
+                    color: "#000",
+                    fontWeight: 700,
+                    px: 3,
+                    py: 1,
+                  }}
+                >
+                  Approve Upload (WiFi Only)
+                </Button>
+              ) : (
+                <Chip
+                  icon={<Wifi size={14} color="#00e5ff" />}
+                  label="Ready for WiFi Sync"
+                  sx={{ bgcolor: 'rgba(0, 229, 255, 0.12)', color: '#00e5ff', border: '1px solid rgba(0, 229, 255, 0.3)', fontWeight: 600 }}
+                />
+              )}
+            </Box>
+          ) : (
+            <Box sx={{ bgcolor: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Box
+                component="video"
+                controls
+                autoPlay
+                src={`${API_BASE_URL}/api/videos/stream/${selectedVideo._id}`}
+                sx={{ width: '100%', maxHeight: '60vh', outline: 'none' }}
+              />
+            </Box>
+          )}
 
           <Box sx={{ p: 2, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-            <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: '#64748b' }}>Direct Stream from Cloud Storage</Typography>
+            <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: '#64748b' }}>
+              {selectedVideo.status === 'pending' ? 'Stored locally on phone' : selectedVideo.status === 'approved' ? 'Approved for WiFi upload' : 'Direct Stream from Cloud Storage'}
+            </Typography>
             <Stack direction="row" spacing={1}>
               {selectedVideo.driveViewLink && (
                 <Button
@@ -577,14 +628,16 @@ export default function Layout() {
                   Google Drive
                 </Button>
               )}
-              <Button
-                component="a" href={`${API_BASE_URL}/api/videos/download/${selectedVideo._id}`} download
-                size="small" startIcon={<Download size={13} />}
-                variant="outlined"
-                sx={{ fontSize: 11.5, color: '#94a3b8', borderColor: 'rgba(255,255,255,0.1)', '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.06)' } }}
-              >
-                Download
-              </Button>
+              {(!selectedVideo.status || selectedVideo.status === 'uploaded') && (
+                <Button
+                  component="a" href={`${API_BASE_URL}/api/videos/download/${selectedVideo._id}`} download
+                  size="small" startIcon={<Download size={13} />}
+                  variant="outlined"
+                  sx={{ fontSize: 11.5, color: '#94a3b8', borderColor: 'rgba(255,255,255,0.1)', '&:hover': { color: '#fff', bgcolor: 'rgba(255,255,255,0.06)' } }}
+                >
+                  Download
+                </Button>
+              )}
             </Stack>
           </Box>
         </Dialog>
